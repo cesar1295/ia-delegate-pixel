@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from aidelegate import config
 from aidelegate.runs import RunMeta
 from aidelegate.ui_state import build_state
 
@@ -44,7 +45,7 @@ def test_agent(agent, changes, state, detail):
     ([], {"state": "working", "detail": "Read", "ts": NOW.isoformat()}, "working", "trabajando (Read)"),
     ([], {"state": "working", "ts": NOW.isoformat()}, "working", "trabajando"),
     ([meta(status="listo-para-revisar")], None, "reviewing", "revisando repo-codex"),
-    ([], {"state": "waiting", "ts": NOW.isoformat()}, "waiting", "esperando a Alex"),
+    ([], {"state": "waiting", "ts": NOW.isoformat()}, "waiting", f"esperando a {config.DEFAULTS['user_name']}"),
     ([], None, "sleep", ""),
     ([], {"state": "working", "ts": (NOW - timedelta(minutes=16)).isoformat()}, "sleep", ""),
     ([], {"state": "idle", "ts": NOW.isoformat()}, "idle", ""),

@@ -1,6 +1,9 @@
 # Copia a ~/.config/ai-delegate/config.toml y cambia solo lo que quieras;
 # lo que no pongas toma el valor por defecto (aidelegate/config.py).
 
+# main = "claude"         # claude, codex o agy
+# user_name = "Ana"
+
 # fallback_order = ["codex", "agy"]
 
 [routing]
@@ -24,3 +27,7 @@
 # Checks por proyecto cuando la detección automática no basta:
 # [projects."/home/usuario/Documentos/Proyectos/sportswear-ecommerce"]
 # check = "npm run lint && npm run test"
+
+[agents.claude]
+# bin = "auto"            # detecta también Claude Desktop
+# model = ""

@@ -7,7 +7,7 @@ import re
 
 from .errors import DelegateError
 
-SUBCOMMANDS = ("run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats", "ui", "claude-status")
+SUBCOMMANDS = ("run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats", "ui", "claude-status", "setup", "master", "doctor")
 
 
 def parse(argv: list[str]) -> argparse.Namespace:
@@ -23,6 +23,13 @@ def _parser() -> argparse.ArgumentParser:
         description="Delega tareas a Codex o Antigravity (agy) y devuelve un resumen corto.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+    setup = sub.add_parser("setup", help="Instala ai-delegate en este equipo.")
+    setup.add_argument("--master", choices=("claude", "codex", "agy"))
+    setup.add_argument("--user-name")
+    setup.add_argument("--yes", action="store_true")
+    setup.add_argument("--dry-run", action="store_true")
+    sub.add_parser("master", help="Consulta o cambia la IA maestra.").add_argument("name", nargs="?")
+    sub.add_parser("doctor", help="Diagnostica la instalación.").add_argument("--live", action="store_true")
     _add_run(sub)
     _add_run_ref(sub, "diff", "Muestra el diff del worktree de una corrida.").add_argument(
         "--stat", action="store_true", help="solo el resumen de archivos"

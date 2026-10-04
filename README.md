@@ -129,3 +129,34 @@ lista, con cuota y subagentes; también incluye los últimos 40 eventos de entre
 Si un feedback, escalamiento o corrección automática deja el diff igual, la corrida
 queda en `sin-cambios`, conserva el worktree y permite revisar, dar feedback, escalar
 o descartar. Un resumen ilegible añade un aviso para revisar el diff antes de confiar.
+
+## Instalar en un equipo nuevo
+
+Con Python ≥3.11 y git configurado (`user.name` y `user.email`), clona este repo y entra en él:
+
+```sh
+git clone <URL-del-repo-ai-delegate>
+cd ai-delegate
+python3 ai_delegate.py setup
+```
+
+El asistente detecta las CLIs, pregunta qué IA será la maestra y tu nombre, instala las instrucciones,
+permisos y enlace, y respalda los archivos que modifica. Puedes usar `--master codex --user-name Ana --yes`
+o revisar los cambios con `--dry-run --yes`. Si lo indica, agrega `~/.local/bin` a tu PATH.
+Completa los logins pendientes (`codex login`, `agy` siguiendo su flujo y `claude`) y verifica:
+
+```sh
+ai-delegate doctor
+ai-delegate doctor --live  # prueba real de respuesta; consume uso de las IAs
+```
+
+## Cambiar la IA maestra
+
+```sh
+ai-delegate master        # maestra actual y candidatas instaladas
+ai-delegate master codex # también acepta claude o agy
+```
+
+El cambio mueve el bloque de instrucciones entre los archivos personales de las IAs y ajusta los hooks
+de Claude. La maestra revisa y recibe los escalamientos; las otras IAs son los destinos delegables.
+La actividad se detecta también desde sus sesiones locales, sin depender de hooks.

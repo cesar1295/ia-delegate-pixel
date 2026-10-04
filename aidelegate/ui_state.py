@@ -1,11 +1,11 @@
-"""Estado de la oficina a partir de corridas y actividad de Claude."""
+"""Estado de la oficina a partir de corridas y actividad de las IAs."""
 
 from __future__ import annotations
 
 import os
 from datetime import datetime
 
-from . import config, quota, stats
+from . import activity, config, quota, stats
 from .runs import RunMeta
 
 
@@ -76,20 +76,33 @@ def _agent(metas: list[RunMeta], now: datetime, max_fix: int) -> dict:
     return character("idle")
 
 
-def _claude(metas: list[RunMeta], claude: dict | None, now: datetime) -> dict:
-    activity = claude or {}
+def _main(metas: list[RunMeta], claude: dict | None, now: datetime,
+            name: str = "claude", user_name: str = "usuario") -> dict:
+    hook = claude or {}
     escalated = next((m for m in metas if m.status == "escalado-a-main"), None)
     if escalated:
         return character("fixing", f"terminando: {first_line(escalated.task, 50)}", escalated)
-    elapsed = age(activity.get("ts"), now)
-    if activity.get("state") == "working" and elapsed < 30:
-        tool = activity.get("detail") or activity.get("tool")
-        return character("working", f"trabajando ({tool})" if tool else "trabajando", since=activity.get("ts"))
     review = next((m for m in metas if m.status == "listo-para-revisar"), None)
     if review:
         return character("reviewing", f"revisando {'-'.join(review.run_id.split('-')[-2:])}", review)
-    if activity.get("state") == "waiting" and elapsed < 600:
-        return character("waiting", "esperando a Alex", since=activity.get("ts"))
+    elapsed = age(hook.get("ts"), now)
+    if 0 <= elapsed < 30 and hook.get("state") in {"working", "waiting", "idle"}:
+        if hook["state"] == "waiting":
+            return character("waiting", f"esperando a {user_name}", since=hook.get("ts"))
+        if hook["state"] == "idle":
+            return character("idle", since=hook.get("ts"))
+        tool = hook.get("detail") or hook.get("tool")
+        return character("working", f"trabajando ({tool})" if tool else "trabajando", since=hook.get("ts"))
+    session = activity.last_activity(name)
+    session_ts = session.isoformat() if session else None
+    if not any(m.agent == name and alive(m, now) for m in metas):
+        session_age = age(session_ts, now)
+        if 0 <= session_age < 20 and elapsed >= 30:
+            return character("working", "trabajando", since=session_ts)
+        if session_age >= 0:
+            elapsed = min(elapsed, session_age)
+    if hook.get("state") == "waiting" and elapsed < 600:
+        return character("waiting", f"esperando a {user_name}", since=hook.get("ts"))
     return character("sleep" if elapsed > 900 else "idle")
 
 
@@ -109,13 +122,18 @@ def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dic
         row.update(task=first_line(meta.task, 80), checks_ok=meta.last_check.get("ok") if meta.last_check else None)
         rows.append(row)
     agents = []
-    for name, settings, role in [(cfg["main"]["name"], cfg["main"], "main"),
-                                  *((n, a, "agent") for n, a in cfg["agents"].items())]:
+    master = config.main_name(cfg)
+    for name, settings, role in [(master, cfg["agents"].get(master, {}), "main"),
+                                  *((n, a, "agent") for n, a in cfg["agents"].items() if n != master)]:
         matching = [m for m in ordered if m.agent == name]
-        state = _claude(ordered, claude, now) if role == "main" else _agent(matching, now, max_fix_rounds)
+        state = _main(ordered, claude if name == "claude" else None, now, name, cfg.get("user_name", config.DEFAULTS["user_name"])) if role == "main" else _agent(matching, now, max_fix_rounds)
         color = settings.get("color", "#3a3a48")
         active = next((m for m in matching if m.run_id == state["run_id"] and alive(m, now)), None)
-        subs = (claude or {}).get("subagents", []) if role == "main" else active.subagents if active else []
+        if role == "main":
+            fresh_hook = name == "claude" and 0 <= age((claude or {}).get("ts"), now) < 30
+            subs = (claude or {}).get("subagents", []) if fresh_hook else []
+        else:
+            subs = active.subagents if active else []
         agents.append({"name": name, "display": settings.get("display", name), "color": color,
                        "role": role, "look": None if role == "main" or name in {"codex", "agy"}
                        else settings.get("look", {"hair": "#3a3a48", "color": color}),
