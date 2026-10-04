@@ -1,0 +1,5 @@
+{
+  "type": "command",
+  "command": "ai-delegate claude-statusline",
+  "refreshInterval": 60
+}

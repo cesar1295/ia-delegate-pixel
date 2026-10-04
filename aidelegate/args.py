@@ -7,7 +7,7 @@ import re
 
 from .errors import DelegateError
 
-SUBCOMMANDS = ("run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats", "ui", "claude-status", "setup", "master", "doctor")
+SUBCOMMANDS = ("run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats", "ui", "claude-status", "claude-statusline", "setup", "master", "doctor")
 
 
 def parse(argv: list[str]) -> argparse.Namespace:
@@ -54,6 +54,7 @@ def _parser() -> argparse.ArgumentParser:
     status.add_argument("state", nargs="?", choices=("working", "waiting", "idle"))
     status.add_argument("--detail")
     status.add_argument("--from-hook", action="store_true")
+    sub.add_parser("claude-statusline", help="Procesa rate_limits de Claude Code para la barra de estado.")
     return parser
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from . import activity, config, quota, stats
+from . import activity, config, quota, stats, usage
 from .runs import RunMeta
 
 
@@ -143,6 +143,8 @@ def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dic
                        "role": role, "look": None if role == "main" or name in {"codex", "agy"}
                        else settings.get("look", {"hair": "#3a3a48", "color": color}),
                        **state, "quota": quota.get(name, cfg, ordered, now),
+                       "usage": usage.get_usage(name, role, cfg, ordered, now),
+                       "time": usage.get_time(name, role, cfg, ordered, now),
                        "subagents": [{"id": s["id"], "label": s["label"]} for s in subs
                                      if role != "main" or age(s.get("ts"), now) < 1800]})
     events = sorted(({**event, "id": f"{meta.run_id}:{i}", "run_id": meta.run_id}

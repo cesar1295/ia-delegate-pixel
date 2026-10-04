@@ -23,6 +23,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "claude-status":
         from .claude_status import main as status_main
         return status_main(argv[1:])
+    if argv and argv[0] == "claude-statusline":
+        from .claude_status import statusline_main
+        return statusline_main(argv[1:])
     args = parse(argv)
     try:
         if args.command == "doctor":
@@ -287,7 +290,7 @@ def cmd_ui(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 
 def cmd_stats(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
-    print(stats.table())
+    print(stats.table(cfg))
     return 0
 
 

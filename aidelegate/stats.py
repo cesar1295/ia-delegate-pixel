@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from datetime import datetime
 
-from . import config
+from . import config, runs, usage
 from .runs import RunMeta
 
 OUTCOMES = ("integrado", "descartado", "escalado")
@@ -24,11 +24,45 @@ def record(meta: RunMeta, outcome: str) -> None:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
-def table() -> str:
+def time_table(cfg: dict | None = None, metas: list[RunMeta] | None = None,
+               now: datetime | None = None) -> str:
+    """Tabla de tiempo de desarrollo y tokens por IA."""
+    if cfg is None:
+        try:
+            cfg = config.load()
+        except Exception:
+            cfg = config.DEFAULTS
+    master = config.main_name(cfg)
+    agents_map = cfg.get("agents", {})
+    agent_names = [master] + [n for n in agents_map if n != master] if master in agents_map else list(agents_map)
+    metas = runs.recent(1_000_000) if metas is None else metas
+    now = now or datetime.now()
+
+    lines = [f"{'IA':<8} | {'hoy':<12} | {'semana':<14} | {'total':<14} | {'tokens hoy'}"]
+    for name in agent_names:
+        role = "main" if name == master else "agent"
+        u = usage.get_usage(name, role, cfg, metas, now)
+        t = usage.get_time(name, role, cfg, metas, now)
+        today_val = t.get("today_s") if t else None
+        week_val = t.get("week_s") if t else None
+        total_val = t.get("total_s") if t else None
+        tokens_val = u.get("tokens_today") if u else None
+
+        hoy_str = usage.format_time(today_val) if today_val is not None else "sin dato"
+        semana_str = usage.format_time(week_val) if week_val is not None else "sin dato"
+        total_str = usage.format_time(total_val) if total_val is not None else "sin dato"
+        tokens_str = usage.format_tokens(tokens_val) if tokens_val is not None else "sin dato"
+
+        lines.append(f"{name:<8} | {hoy_str:<12} | {semana_str:<14} | {total_str:<14} | {tokens_str}")
+
+    return "\n".join(lines)
+
+
+def table(cfg: dict | None = None) -> str:
     path = config.ledger_path()
-    if not path.exists():
-        return "Todavía no hay corridas cerradas (integradas, descartadas o escaladas)."
-    return _render(_groups(read_rows()))
+    t1 = _render(_groups(read_rows())) if (path.exists() and read_rows()) else "Todavía no hay corridas cerradas (integradas, descartadas o escaladas)."
+    t2 = time_table(cfg)
+    return f"{t1}\n\ntiempo:\n{t2}"
 
 
 def read_rows() -> list[dict]:

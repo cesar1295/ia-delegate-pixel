@@ -14,14 +14,14 @@ _CACHE: dict[str, tuple[float, dict]] = {}
 
 
 def empty() -> dict:
-    return {"source": None, "remaining_pct": None, "estimated": False, "windows": []}
+    return {"source": None, "remaining_pct": None, "estimated": False, "stale": False, "windows": []}
 
 
 def _windows(windows: list[dict], source: str) -> dict:
     used = [w["used_pct"] for w in windows if isinstance(w.get("used_pct"), (int, float))]
     return {"source": source if windows else None,
             "remaining_pct": round(100 - max(used)) if used else None,
-            "estimated": False, "windows": windows}
+            "estimated": False, "stale": False, "windows": windows}
 
 
 def codex(home: str = "", now: datetime | None = None) -> dict:
@@ -106,11 +106,24 @@ def budget(name: str, agent: dict, metas: list[RunMeta], now: datetime) -> dict:
 
 def get(name: str, cfg: dict, metas: list[RunMeta], now: datetime | None = None) -> dict:
     now = now or datetime.now()
-    if name == "claude" and name == config.main_name(cfg):
-        try:
-            data = json.loads((config.data_dir() / "claude-quota.json").read_text())
-            return _windows(data["windows"], "archivo")
-        except (OSError, ValueError, KeyError, TypeError):
+    if name == "claude" and (name == config.main_name(cfg) or cfg["agents"].get(name, {}).get("quota") in ("claude", "none", "archivo")):
+        path = config.data_dir() / "claude-quota.json"
+        if path.exists():
+            try:
+                data = json.loads(path.read_text())
+                windows = data.get("windows", [])
+                ts = data.get("ts")
+                elapsed = _age(ts, now) if ts else float("inf")
+                stale = elapsed >= 15 * 60 or elapsed < 0
+                res = _windows(windows, "claude")
+                res["stale"] = stale
+                if ts:
+                    res["ts"] = ts
+                return res
+            except (OSError, ValueError, KeyError, TypeError):
+                if name == config.main_name(cfg):
+                    return empty()
+        elif name == config.main_name(cfg):
             return empty()
     agent = cfg["agents"].get(name, {})
     source = agent.get("quota", "none")
