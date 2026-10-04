@@ -45,6 +45,18 @@ def test_context_file_limits(tmp_path):
         prompt.read_context_file(big)
 
 
+def test_design_spec_switches_to_strict_implementation():
+    text = prompt.compose(spec(kind="design", design_spec="Botón: fondo #E4572E, radio 999px"))
+    assert "EXACTAMENTE" in text and "No inventes" in text
+    assert "fondo #E4572E" in text and "Especificación de diseño" in text
+    assert prompt.DESIGN_RULE not in text  # ya no se le prohíbe tocar estilos: debe implementarlos
+
+
+def test_escalation_keeps_design_spec():
+    text = prompt.compose_escalation("tarea", "agy", [], "", design_spec="radio 12px")
+    assert "radio 12px" in text and "EXACTAMENTE" in text
+
+
 def test_escalation_carries_feedback():
     text = prompt.compose_escalation("tarea", "agy", ["falta manejar null"], "2 files changed")
     assert "antes la tenía agy" in text and "falta manejar null" in text and "2 files changed" in text

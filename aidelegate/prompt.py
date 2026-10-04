@@ -26,6 +26,15 @@ DESIGN_RULE = (
     "`TODO(diseño): ...` y menciónalo en tu resumen."
 )
 
+# Con especificación de diseño, el agente implementa; no diseña.
+DESIGN_IMPL_RULE = (
+    "Implementa el diseño EXACTAMENTE como dice la especificación de diseño: mismos colores, "
+    "tipografías, tamaños, espaciados, radios, sombras, breakpoints, estados y textos. No inventes "
+    "estilos, componentes, secciones ni animaciones que no estén ahí, y no 'mejores' el diseño. "
+    "Si algo no está especificado, usa los tokens/estilos que ya existen en el proyecto, márcalo "
+    "con `TODO(diseño): ...` y lístalo en tu resumen."
+)
+
 REPORT_RULE = (
     "Al terminar responde con un resumen de máximo 10 líneas: qué hiciste, archivos tocados, "
     "cómo lo verificaste y qué quedó pendiente. No pegues código completo."
@@ -41,18 +50,30 @@ class PromptSpec:
     issue: str | None = None
     context: str | None = None
     agent_hint: str = ""
+    design_spec: str | None = None
+
+
+def design_rule(design_spec: str | None) -> str:
+    return DESIGN_IMPL_RULE if design_spec else DESIGN_RULE
+
+
+def design_section(design_spec: str | None) -> list[str]:
+    if not design_spec:
+        return []
+    return [f"## Especificación de diseño (obligatoria, síguela al pie de la letra)\n\n{design_spec.strip()}"]
 
 
 def compose(spec: PromptSpec) -> str:
     rules = [MODE_RULES[spec.mode], f"Directorio de trabajo: `{spec.directory}`"]
     if spec.mode == "write":
-        rules.append(DESIGN_RULE)
+        rules.append(design_rule(spec.design_spec))
     if spec.agent_hint:
         rules.append(spec.agent_hint)
     rules.append(REPORT_RULE)
     parts = [
         f"# Tarea ({spec.kind})\n\n{spec.task.strip()}",
         "## Reglas\n\n" + "\n".join(f"- {rule}" for rule in rules),
+        *design_section(spec.design_spec),
     ]
     if spec.issue:
         parts.append(f"## Issue de GitHub\n\n{spec.issue.strip()}")
@@ -76,14 +97,17 @@ def compose_feedback(feedback: str, review_round: int) -> str:
     )
 
 
-def compose_escalation(task: str, previous_agent: str, feedback: list[str], diffstat: str) -> str:
+def compose_escalation(
+    task: str, previous_agent: str, feedback: list[str], diffstat: str, design_spec: str | None = None
+) -> str:
     notes = "\n".join(f"- {item}" for item in feedback) or "- (sin comentarios registrados)"
-    return (
+    text = (
         f"# Tarea escalada (antes la tenía {previous_agent})\n\n{task.strip()}\n\n"
         f"El directorio ya contiene un intento previo ({diffstat or 'sin cambios'}). Revísalo, "
         f"conserva lo que sirva y corrige lo que no.\n\n## Comentarios de revisión previos\n\n{notes}\n\n"
-        f"## Reglas\n\n- {MODE_RULES['write']}\n- {DESIGN_RULE}\n- {REPORT_RULE}\n"
+        f"## Reglas\n\n- {MODE_RULES['write']}\n- {design_rule(design_spec)}\n- {REPORT_RULE}\n"
     )
+    return "\n\n".join([text.rstrip(), *design_section(design_spec)]) + "\n"
 
 
 def fetch_issue(ref: str, directory: Path) -> str:

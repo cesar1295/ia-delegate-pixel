@@ -13,7 +13,8 @@ from .errors import DelegateError
 DEFAULTS: dict[str, Any] = {
     # tipo de tarea -> agente. "main" = la sesión principal (Claude) la hace.
     "routing": {
-        "design": "main",
+        # el diseño lo decide la sesión principal y lo pasa en --design-spec; el agente solo lo codifica
+        "design": "codex",
         "security": "main",
         "feature": "codex",
         "bugfix": "codex",
@@ -31,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
         "image": "agy",
     },
     "default_kind": "feature",
+    "spec_required_kinds": ["design"],
     "read_kinds": ["review", "research", "summarize"],
     # orden de escalamiento cuando un agente no lo resuelve
     "chain": ["agy", "codex", "main"],

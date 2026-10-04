@@ -13,9 +13,13 @@ def test_programming_goes_to_codex_and_simple_tasks_to_agy():
     assert routing.resolve_target("auto", "docs", CFG) == "agy"
 
 
-def test_design_stays_with_main_session():
+def test_design_is_implemented_by_codex():
+    assert routing.resolve_target("auto", "design", CFG) == "codex"
+
+
+def test_security_stays_with_main_session():
     with pytest.raises(MainSessionTask) as err:
-        routing.resolve_target("auto", "design", CFG)
+        routing.resolve_target("auto", "security", CFG)
     assert err.value.exit_code == 3
 
 

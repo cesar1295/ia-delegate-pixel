@@ -34,6 +34,7 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     runs.cleanup_old(cfg["limits"]["keep_days"])
     task = _read_task(args)
     kind = routing.validate_kind(args.kind, cfg)
+    _require_design_spec(args, kind, cfg)
     mode = args.mode or routing.default_mode(kind, cfg)
     agent = routing.resolve_target(args.to, kind, cfg)
     runner = runners.get(agent, cfg, args.model)
@@ -103,7 +104,20 @@ def _new_meta(agent: str, mode: str, kind: str, task: str, source: Path, root: P
 def _prompt_spec(args: argparse.Namespace, meta: RunMeta, source: Path) -> prompt.PromptSpec:
     issue = prompt.fetch_issue(args.issue, source) if args.issue else None
     context = prompt.read_context_file(Path(args.context_file).expanduser()) if args.context_file else None
-    return prompt.PromptSpec(meta.task, meta.mode, source, meta.kind, issue, context)
+    design = None
+    if args.design_spec:
+        path = Path(args.design_spec).expanduser().resolve()
+        design, meta.design_spec_path = prompt.read_context_file(path), str(path)
+    return prompt.PromptSpec(meta.task, meta.mode, source, meta.kind, issue, context, design_spec=design)
+
+
+def _require_design_spec(args: argparse.Namespace, kind: str, cfg: dict[str, Any]) -> None:
+    if kind in cfg["spec_required_kinds"] and not args.design_spec:
+        raise DelegateError(
+            f"Las tareas '{kind}' necesitan la especificación de diseño de la sesión principal: "
+            "escríbela (plantilla en ~/Documentos/Proyectos/ai-delegate/templates/design-spec.md) "
+            "y pásala con --design-spec <archivo>."
+        )
 
 
 def _wants_worktree(args: argparse.Namespace, meta: RunMeta, root: Path | None) -> bool:
@@ -188,8 +202,18 @@ def cmd_escalate(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     if nxt == routing.MAIN:
         return _escalate_to_main(meta, run_dir)
     meta.agent, meta.thread_id, meta.review_rounds, meta.fix_rounds = nxt, None, 0, 0
-    text = prompt.compose_escalation(meta.task, previous, meta.feedback, meta.diffstat or "")
+    design = _reload_design_spec(meta)
+    text = prompt.compose_escalation(meta.task, previous, meta.feedback, meta.diffstat or "", design)
     return _continue(meta, run_dir, cfg, sanitize(text, source="el prompt de escalamiento"), "escalamiento")
+
+
+def _reload_design_spec(meta: RunMeta) -> str | None:
+    if not meta.design_spec_path:
+        return None
+    path = Path(meta.design_spec_path)
+    if not path.is_file():
+        raise DelegateError(f"La especificación de diseño ya no existe: {path}. Restáurala antes de escalar.")
+    return prompt.read_context_file(path)
 
 
 def _escalate_to_main(meta: RunMeta, run_dir: Path) -> int:

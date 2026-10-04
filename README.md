@@ -17,13 +17,25 @@ Codex y agy usan tus sesiones ya iniciadas. ai-delegate nunca lee ni guarda cred
 
 | Tipo | Agente | Modo |
 |---|---|---|
-| `design`, `security` | **la sesión principal**: no se delegan (sale con código 3) | — |
+| `security` | **la sesión principal**: no se delega (sale con código 3) | — |
+| `design` | codex (o `--to agy`) implementa la especificación de la sesión principal | write |
 | `feature`, `bugfix`, `refactor`, `api` | codex | write |
 | `review` | codex | read |
 | `test`, `docs`, `mock`, `i18n`, `chore`, `image` | agy | write |
 | `research`, `summarize` | agy | read |
 
 Puedes cambiar estas reglas en `~/.config/ai-delegate/config.toml` (ver `config.example.toml`).
+
+## Diseño
+
+El diseño lo decide la sesión principal; Codex y agy solo lo codifican, porque cada uno tiene su propio estilo y lo impondría.
+
+1. La sesión principal escribe la especificación con [templates/design-spec.md](templates/design-spec.md): tokens, layout por breakpoint, componentes con sus estados, movimiento, textos y criterios de aceptación, siempre con valores concretos.
+2. `ai-delegate --kind design --design-spec hero.md --dir <repo> "implementa el hero"`. Sin `--design-spec` la tarea se rechaza.
+3. El agente recibe la regla de implementarla **exactamente**: nada inventado, nada "mejorado", y lo que falte queda marcado como `TODO(diseño)`.
+4. La sesión principal revisa el diff contra la especificación (y la vista en el navegador) y regresa las diferencias con `feedback`, dando valores exactos.
+
+En las tareas que no son de diseño (`feature`, `bugfix`…), el agente tiene prohibido tocar estilos.
 
 ## Ciclo
 

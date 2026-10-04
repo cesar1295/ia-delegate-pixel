@@ -31,8 +31,25 @@ def test_secret_in_task_blocks_and_records_meta(home, repo, capsys):
     assert "abc123" not in capsys.readouterr().err
 
 
-def test_design_is_not_delegated(home, repo, capsys):
-    assert run("--dir", str(repo), "--kind", "design", "rediseña el hero") == 3
+def test_design_without_spec_is_refused_before_creating_a_run(home, repo, capsys):
+    assert run("--dir", str(repo), "--kind", "design", "rediseña el hero") == 2
+    assert "--design-spec" in capsys.readouterr().err
+    assert runs.recent(5) == []
+
+
+def test_design_with_spec_is_delegated_with_strict_rules(home, repo, tmp_path):
+    design = tmp_path / "hero.md"
+    design.write_text("Hero: fondo #0F0F10, título 48px Clash Display 600")
+    assert run("--dir", str(repo), "--kind", "design", "--design-spec", str(design),
+               "--check", "none", "implementa el hero") == 0
+    meta = last_meta()
+    sent = (runs.resolve("last") / "prompt.md").read_text()
+    assert meta.agent == "codex" and meta.design_spec_path == str(design)
+    assert "título 48px Clash Display 600" in sent and "EXACTAMENTE" in sent
+
+
+def test_security_is_not_delegated(home, repo, capsys):
+    assert run("--dir", str(repo), "--kind", "security", "revisa la auth") == 3
     assert "sesión principal" in capsys.readouterr().err
 
 

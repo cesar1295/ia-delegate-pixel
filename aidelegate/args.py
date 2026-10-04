@@ -51,6 +51,8 @@ def _add_run(sub: argparse._SubParsersAction) -> None:
     run.add_argument("--mode", choices=("read", "write"), help="por defecto depende de --kind")
     run.add_argument("--issue", help="número o URL de un issue de GitHub (vía gh)")
     run.add_argument("--context-file", help="archivo con contexto del repo")
+    run.add_argument("--design-spec", help="especificación de diseño a implementar al pie de la letra "
+                                           "(obligatoria con --kind design; ver templates/design-spec.md)")
     run.add_argument("--worktree", action=argparse.BooleanOptionalAction, default=None,
                      help="worktree aislado (por defecto sí en modo write dentro de un repo git)")
     run.add_argument("--check", default="auto", help="comando de checks, 'auto' (detecta) o 'none'")

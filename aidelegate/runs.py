@@ -38,6 +38,7 @@ class RunMeta:
     branch: str | None = None
     base_commit: str | None = None
     base_branch: str | None = None
+    design_spec_path: str | None = None
     check_cmd: str | None = None
     last_check: dict[str, Any] | None = None
     diffstat: str | None = None
