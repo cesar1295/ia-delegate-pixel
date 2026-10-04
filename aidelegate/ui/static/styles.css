@@ -740,7 +740,6 @@ button:disabled {
 .doctor-results {
   margin-top:8px;
 }
-/* TODO(diseño): estilos para subsección de permisos en Ajustes */
 .permissions-header {
   font:400 9px var(--pixel);
   color:var(--muted);
