@@ -30,6 +30,10 @@ class RunMeta:
     task: str
     status: str = "running"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    pid: int | None = None
+    phase: str | None = None
+    phase_label: str | None = None
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     exit_code: int | None = None
     duration_s: float = 0.0
     thread_id: str | None = None
@@ -52,6 +56,8 @@ class RunMeta:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RunMeta":
+        data = dict(data)
+        data.setdefault("updated_at", data.get("created_at", ""))
         known = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in known})
 
@@ -73,6 +79,7 @@ def create(meta: RunMeta) -> Path:
 
 
 def save(meta: RunMeta, run_dir: Path) -> None:
+    meta.updated_at = datetime.now().isoformat(timespec="seconds")
     tmp = run_dir / "meta.json.tmp"
     tmp.write_text(json.dumps(asdict(meta), indent=2, ensure_ascii=False))
     tmp.replace(run_dir / "meta.json")

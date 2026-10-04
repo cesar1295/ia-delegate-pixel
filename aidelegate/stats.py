@@ -28,15 +28,32 @@ def table() -> str:
     path = config.ledger_path()
     if not path.exists():
         return "Todavía no hay corridas cerradas (integradas, descartadas o escaladas)."
+    return _render(_groups(read_rows()))
+
+
+def read_rows() -> list[dict]:
+    """Lee la bitácora de resultados."""
+    path = config.ledger_path()
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
+
+
+def _groups(entries: list[dict]) -> dict[tuple[str, str], dict[str, int]]:
     groups: dict[tuple[str, str], dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for line in path.read_text().splitlines():
-        entry = json.loads(line)
+    for entry in entries:
         row = groups[(entry["agent"], entry["kind"])]
         row["total"] += 1
         row[entry["outcome"]] += 1
-        if entry["outcome"] == "integrado" and entry["review_rounds"] == 0:
+        if entry["outcome"] == "integrado" and entry.get("review_rounds", 0) == 0:
             row["primera"] += 1
-    return _render(groups)
+    return groups
+
+
+def aggregate(entries: list[dict]) -> list[dict]:
+    """Calcula estadísticas sin renderizar ni leer archivos."""
+    return [{"agent": agent, "kind": kind, "total": row["total"],
+             "integrado": row["integrado"], "primera_pct": 100 * row["primera"] // row["total"],
+             "descartado": row["descartado"], "escalado": row["escalado"]}
+            for (agent, kind), row in sorted(_groups(entries).items())]
 
 
 def _render(groups: dict[tuple[str, str], dict[str, int]]) -> str:
