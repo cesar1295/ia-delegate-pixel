@@ -99,40 +99,6 @@ h2 {
   font:400 14px var(--pixel);
   margin:0 0 12px
 }
-.board {
-  position:absolute;
-  color:#1a1726;
-  text-align:center;
-  overflow:hidden;
-  font:700 10px var(--pixel);
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-  gap:4px
-}
-.counts {
-  display:grid;
-  grid-template-columns:repeat(3,1fr)
-}
-.counts div {
-  display:flex;
-  flex-direction:column
-}
-.counts b {
-  font:700 16px var(--pixel)
-}
-.counts span {
-  font:400 8px var(--pixel)
-}
-.counts div:nth-child(1) {
-  color:#c98a00
-}
-.counts div:nth-child(2) {
-  color:#1f7fbf
-}
-.counts div:nth-child(3) {
-  color:#1d9a5b
-}
 .agent-name {
   position:absolute;
   text-align:center;
@@ -498,7 +464,6 @@ text-align:left;
   margin:0 0 16px
 }
 
-/* TODO(diseño): el espaciado del título y la hora usa el gap existente del encabezado. */
 .office-title {
   display:flex;
   align-items:center;
@@ -508,23 +473,321 @@ text-align:left;
   font:400 10px var(--pixel);
   color:var(--muted);
 }
-.board,.agent-name,.bubble {
-  font-size:var(--scene-font,10px);
-}
-.counts b {
-  font-size:var(--scene-number,16px);
-}
-.counts span {
-  font-size:var(--scene-caption,8px);
-}
-.mini-extra {
-  font-size:var(--scene-extra,9px);
-}
-.scale-one .counts span,.scale-one .board strong {
-  display:none;
-}
 @media(max-width:699px) {
   #day-time {
     display:none;
+  }
+}
+
+/* Oficina v4. */
+body {
+  overflow:hidden;
+}
+.office {
+  max-width:none;
+  padding:0;
+  margin:0;
+  height:100dvh;
+  display:flex;
+  flex-direction:column;
+}
+header {
+  height:40px;
+  flex:none;
+  padding:0 8px;
+  gap:8px;
+}
+h1 {
+  font:700 12px var(--pixel);
+}
+.office-title {
+  gap:8px;
+}
+.day-clock {
+  font:400 9px var(--pixel);
+}
+.connection {
+  margin-left:auto;
+  font-size:9px;
+}
+.camera-controls {
+  display:flex;
+  gap:4px;
+}
+.camera-controls button {
+  width:28px;
+  height:28px;
+  padding:0;
+  background:transparent;
+  border:2px solid var(--line);
+}
+main {
+  flex:1;
+  min-height:0;
+  grid-template-columns:minmax(0,1fr) 380px;
+  gap:0;
+}
+.scene-column {
+  position:relative;
+  z-index:0;
+  min-height:0;
+  overflow:hidden;
+}
+.scene {
+  z-index:0;
+  width:100%;
+  height:100%;
+  margin:0;
+  overflow:hidden;
+  border:0;
+  box-shadow:none;
+  touch-action:none;
+}
+#office-canvas {
+  width:100%;
+  height:100%;
+}
+#scene-layers {
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+.agent-hit,.mini-hit {
+  pointer-events:auto;
+}
+.room-label {
+  position:absolute;
+  font:400 8px var(--pixel);
+  color:rgb(255 241 232 / .55);
+  white-space:nowrap;
+}
+.agent-name {
+  font:700 8px var(--pixel);
+  white-space:nowrap;
+}
+.bubble {
+  transition:none;
+}
+aside {
+  position:relative;
+  z-index:3;
+  min-height:0;
+  gap:0;
+  background:var(--panel);
+  border-left:2px solid var(--line);
+}
+.tabs {
+  display:flex;
+  height:44px;
+  flex:none;
+}
+.tabs button {
+  flex:1;
+  min-width:0;
+  padding:0;
+  border:0;
+  border-top:2px solid transparent;
+  background:var(--panel);
+  font:700 9px var(--pixel);
+}
+.tabs button.active {
+  border-top-color:var(--review);
+}
+#panel-content {
+  overflow-y:auto;
+  min-height:0;
+  flex:1;
+}
+.panel {
+  border:0;
+  box-shadow:none;
+}
+.task-counts {
+  color:var(--muted);
+  font:400 9px var(--pixel);
+}
+#sheet-counts {
+  display:none;
+  margin-bottom:12px;
+}
+.settings-section {
+  margin-bottom:16px;
+}
+.settings-section h2 {
+  font:700 10px var(--pixel);
+}
+.setting-field {
+  margin-bottom:12px;
+}
+.setting-field label {
+  display:block;
+  margin-bottom:8px;
+  color:var(--muted);
+  font:400 9px var(--pixel);
+}
+.setting-field input,.setting-field select {
+  max-width:100%;
+  width:100%;
+  font:13px var(--body);
+  color:var(--text);
+  background:var(--bg);
+  border:2px solid var(--line);
+  padding:6px 8px;
+}
+.setting-field input:focus,.setting-field select:focus {
+  outline:none;
+  border-color:var(--review);
+}
+.setting-field input[type="number"] {
+  width:72px;
+}
+.setting-field input[type="color"] {
+  width:72px;
+  height:32px;
+}
+.setting-field input.setting-switch {
+  appearance:none;
+  display:block;
+  width:28px;
+  height:14px;
+  padding:0;
+  border:0;
+  background:var(--line);
+  position:relative;
+  cursor:pointer;
+}
+.setting-switch:before {
+  content:"";
+  position:absolute;
+  width:10px;
+  height:10px;
+  left:2px;
+  top:2px;
+  background:var(--text);
+}
+.setting-field input.setting-switch:checked {
+  background:var(--ok);
+}
+.setting-switch:checked:before {
+  left:16px;
+}
+.setting-field input.setting-switch:focus-visible {
+  outline:2px solid var(--review);
+}
+.primary,.secondary {
+  font:700 10px var(--pixel);
+  padding:8px 12px;
+}
+.primary {
+  background:var(--review);
+  color:#13111c;
+  border:2px solid var(--review);
+  box-shadow:var(--shadow);
+}
+.secondary {
+  background:transparent;
+  border:2px solid var(--line);
+}
+button:disabled {
+  opacity:.55;
+  cursor:default;
+}
+.settings-card {
+  background:var(--panel-2);
+  border:2px solid var(--line);
+  padding:12px;
+  margin-bottom:12px;
+}
+.settings-card.is-master {
+  border-color:var(--review);
+}
+.settings-card.not-installed {
+  color:var(--muted);
+}
+.settings-card.not-installed .team-name {
+  color:var(--muted)!important;
+}
+.settings-card .pill {
+  margin-left:8px;
+}
+.settings-card p {
+  margin:8px 0;
+}
+.settings-card .setting-field:last-child {
+  margin-bottom:0;
+}
+.settings-footer {
+  position:sticky;
+  bottom:-12px;
+  background:var(--panel);
+  padding:12px 0;
+}
+.settings-status {
+  font:11px var(--body);
+  margin-top:8px;
+}
+.field-error {
+  font:11px var(--body);
+  color:var(--err);
+  margin-top:4px;
+}
+.setting-field [aria-invalid="true"] {
+  border-color:var(--err);
+}
+.success {
+  color:var(--ok);
+}
+.doctor-results {
+  margin-top:8px;
+}
+@media(max-width:1099px) {
+  main {
+    display:block;
+    position:relative;
+    padding-bottom:44px;
+  }
+  .scene-column {
+    height:100%;
+  }
+  aside {
+    position:absolute;
+    inset:auto 0 0;
+    border:0;
+    background:transparent;
+    height:44px;
+  }
+  .tabs {
+    position:absolute;
+    bottom:0;
+    width:100%;
+  }
+  #panel-content {
+    display:none;
+    position:absolute;
+    bottom:44px;
+    width:100%;
+    max-height:60dvh;
+    overflow-y:auto;
+    border-top:2px solid var(--line);
+    background:var(--panel);
+  }
+  .sheet-open #panel-content {
+    display:block;
+  }
+  #top-counts {
+    display:none;
+  }
+  #sheet-counts {
+    display:block;
+  }
+  #day-time {
+    display:inline;
+  }
+  .office-title {
+    flex-wrap:wrap;
+    gap:0 8px;
+  }
+  .connection {
+    gap:4px;
   }
 }

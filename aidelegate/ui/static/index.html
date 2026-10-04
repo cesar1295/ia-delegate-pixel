@@ -9,23 +9,45 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/sprites.js" defer></script>
+  <script src="/static/office.js" defer></script>
+  <script src="/static/engine.js" defer></script>
+  <script src="/static/panels.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <div class="office">
-    <header><div class="office-title"><h1>OFICINA AI-DELEGATE</h1><span class="day-clock"><span id="day-phase"></span><span id="day-time"></span></span></div><span id="connection" class="connection" role="status"><span class="dot"></span><span id="connection-text">SIN CONEXIÓN</span></span></header>
+    <header>
+      <div class="office-title"><h1>OFICINA</h1><span class="day-clock">
+        <span id="day-phase"></span><span id="day-time"></span></span></div>
+      <div id="top-counts" class="task-counts">EN CURSO <b id="running-count">0</b> ·
+        REVISIÓN <b id="review-count">0</b> · HOY <b id="merged-count">0</b></div>
+      <span id="connection" class="connection" role="status"><span class="dot"></span>
+        <span id="connection-text">SIN CONEXIÓN</span></span>
+      <div class="camera-controls"><button id="zoom-out" aria-label="Reducir zoom">−</button>
+        <button id="zoom-in" aria-label="Aumentar zoom">+</button>
+        <button id="settings-open" aria-label="Abrir Ajustes">⚙</button></div>
+    </header>
     <main>
       <section class="scene-column" aria-label="Oficina pixel">
         <div id="scene" class="scene">
-          <canvas id="office-canvas" width="320" height="200" role="img" aria-label="Oficina de agentes"></canvas>
-          <div id="board" class="board"><strong>PIZARRÓN</strong><div class="counts"><div><b id="running-count">0</b><span>EN CURSO</span></div><div><b id="review-count">0</b><span>REVISIÓN</span></div><div><b id="merged-count">0</b><span>HOY</span></div></div></div>
+          <canvas id="office-canvas" role="img" aria-label="Oficina de agentes"></canvas>
           <div id="scene-layers"></div>
         </div>
       </section>
-      <aside>
-        <section class="panel"><h2>Equipo</h2><div id="team"></div></section>
-        <section class="panel"><h2>Tareas</h2><div id="runs"></div></section>
-        <section class="panel"><h2>Aceptación</h2><div id="stats"></div></section>
+      <aside id="side-panel">
+        <nav class="tabs" aria-label="Paneles de oficina">
+          <button data-tab="team" aria-controls="team-panel" aria-expanded="false">EQUIPO</button>
+          <button data-tab="runs" aria-controls="runs-panel" aria-expanded="false">TAREAS</button>
+          <button data-tab="stats" aria-controls="stats-panel" aria-expanded="false">ACEPTACIÓN</button>
+          <button data-tab="settings" aria-controls="settings-panel" aria-expanded="false">AJUSTES</button>
+        </nav>
+        <div id="panel-content">
+          <section id="team-panel" class="panel" hidden><h2>Equipo</h2><div id="team"></div></section>
+          <section id="runs-panel" class="panel" hidden><h2>Tareas</h2>
+            <div id="sheet-counts" class="task-counts"></div><div id="runs"></div></section>
+          <section id="stats-panel" class="panel" hidden><h2>Aceptación</h2><div id="stats"></div></section>
+          <section id="settings-panel" class="panel" hidden><div id="settings"></div></section>
+        </div>
       </aside>
     </main>
   </div>
