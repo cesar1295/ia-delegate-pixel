@@ -127,3 +127,13 @@ def read_context_file(path: Path) -> str:
     if path.stat().st_size > MAX_CONTEXT_BYTES:
         raise DelegateError(f"{path} pesa más de {MAX_CONTEXT_BYTES // 1000} KB; resume el contexto primero.")
     return path.read_text(errors="replace")
+
+
+def load_design_spec(meta: Any) -> str | None:
+    path_str = getattr(meta, "design_spec_path", None)
+    if not path_str:
+        return None
+    path = Path(path_str)
+    if not path.is_file():
+        raise DelegateError(f"La especificación de diseño ya no existe: {path}. Restáurala antes de escalar.")
+    return read_context_file(path)

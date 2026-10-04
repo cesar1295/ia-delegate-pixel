@@ -1,18 +1,22 @@
-"""Servidor local de solo lectura para la oficina pixel."""
+"""Servidor local para la oficina pixel y API de configuración."""
 
 from __future__ import annotations
 
 import errno
+import hmac
 import json
 import mimetypes
+import re
+import secrets
 import webbrowser
 from dataclasses import asdict
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from . import config, runs, stats, worktree
+from . import config, detect, install, routing, runs, stats, worktree
 from .errors import DelegateError
 from .ui_state import build_state
 
@@ -47,8 +51,85 @@ def run_detail(ref: str) -> dict:
                          f"ai-delegate merge {ref}", f"ai-delegate discard {ref}"]}
 
 
+def _is_allowed_config_key(k: str) -> bool:
+    exact = {
+        "user_name", "strategy.mode", "strategy.first", "strategy.then",
+        "strategy.escalate_after", "strategy.quota_floor_pct",
+        "limits.timeout_min", "limits.max_review_rounds", "limits.keep_days",
+        "ui.time_mode", "ui.fixed_hour",
+    }
+    if k in exact:
+        return True
+    if k.startswith("routing.") and len(k) > len("routing."):
+        return True
+    if k.startswith("agents."):
+        parts = k.split(".")
+        if len(parts) == 3 and parts[2] in {"enabled", "display", "color", "model", "daily_token_budget"}:
+            return True
+    return False
+
+
+def _validate_change_value(k: str, v: Any, cfg: dict[str, Any]) -> str | None:
+    agents = cfg.get("agents", {})
+    if k == "user_name":
+        if not isinstance(v, str) or not (1 <= len(v) <= 40):
+            return "user_name debe ser string de 1 a 40 caracteres"
+    elif k == "strategy.mode":
+        if v not in ("agy-first", "routing"):
+            return "strategy.mode debe ser 'agy-first' o 'routing'"
+    elif k in ("strategy.first", "strategy.then"):
+        if not isinstance(v, str) or v not in agents:
+            return f"{k} debe ser un agente configurado"
+    elif k == "strategy.escalate_after":
+        if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= 10):
+            return "strategy.escalate_after debe ser entero entre 1 y 10"
+    elif k == "strategy.quota_floor_pct":
+        if not isinstance(v, int) or isinstance(v, bool) or not (0 <= v <= 90):
+            return "strategy.quota_floor_pct debe ser entero entre 0 y 90"
+    elif k.startswith("routing."):
+        kind = k.removeprefix("routing.")
+        if not (v in agents or v in ("main", "claude")):
+            return f"routing.{kind} debe ser un agente configurado o 'main'"
+    elif k.startswith("agents."):
+        parts = k.split(".")
+        if len(parts) != 3:
+            return f"Clave de agente inválida: {k}"
+        agent_name, field = parts[1], parts[2]
+        if field == "enabled":
+            if not isinstance(v, bool):
+                return f"agents.{agent_name}.enabled debe ser booleano"
+        elif field == "display":
+            if not isinstance(v, str) or not (1 <= len(v) <= 20):
+                return f"agents.{agent_name}.display debe ser string de 1 a 20 caracteres"
+        elif field == "color":
+            if not isinstance(v, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+                return f"agents.{agent_name}.color debe tener formato #rrggbb"
+        elif field == "model":
+            if not isinstance(v, str) or len(v) > 60:
+                return f"agents.{agent_name}.model debe ser string de hasta 60 caracteres"
+        elif field == "daily_token_budget":
+            if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+                return f"agents.{agent_name}.daily_token_budget debe ser entero >= 0"
+    elif k == "limits.timeout_min":
+        if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= 240):
+            return "limits.timeout_min debe ser entero entre 1 y 240"
+    elif k == "limits.max_review_rounds":
+        if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= 10):
+            return "limits.max_review_rounds debe ser entero entre 1 y 10"
+    elif k == "limits.keep_days":
+        if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= 90):
+            return "limits.keep_days debe ser entero entre 1 y 90"
+    elif k == "ui.time_mode":
+        if v not in ("auto", "fixed"):
+            return "ui.time_mode debe ser 'auto' o 'fixed'"
+    elif k == "ui.fixed_hour":
+        if not isinstance(v, int) or isinstance(v, bool) or not (0 <= v <= 23):
+            return "ui.fixed_hour debe ser entero entre 0 y 23"
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
-    """Atiende las rutas públicas sin registrar cada petición."""
+    """Atiende las rutas públicas y la API de configuración protegida."""
 
     def log_message(self, format: str, *args: object) -> None:
         pass
@@ -61,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def _json(self, data: dict, status: int = 200) -> None:
+    def _json(self, data: Any, status: int = 200) -> None:
         self._send(json.dumps(data, ensure_ascii=False).encode(), "application/json; charset=utf-8", status)
 
     def do_GET(self) -> None:
@@ -76,12 +157,33 @@ class Handler(BaseHTTPRequestHandler):
                 cfg = config.load()
                 self._json(build_state(runs.recent(1_000_000), _claude_status(), stats.read_rows(), datetime.now(),
                                        max_fix_rounds=cfg["limits"]["max_fix_rounds"], cfg=cfg))
+            elif path == "/api/config":
+                cfg = config.load()
+                detected = detect.detect_all()
+                det_data = {
+                    k: {"path": v.path, "version": v.version, "logged_in": v.logged_in, "note": v.note}
+                    for k, v in detected.items()
+                }
+                self._json({
+                    "config": cfg,
+                    "detected": det_data,
+                    "kinds": routing.kinds(cfg),
+                    "path": str(config.config_path()),
+                })
             elif path.startswith("/api/run/"):
                 self._json(run_detail(path.removeprefix("/api/run/")))
             elif path == "/":
                 index = STATIC / "index.html"
-                content = index.read_bytes() if index.is_file() else b"<!doctype html><meta charset='utf-8'><p>Frontend pendiente</p>"
-                self._send(content, "text/html; charset=utf-8")
+                content = index.read_text(encoding="utf-8") if index.is_file() else "<!doctype html><meta charset='utf-8'><head></head><p>Frontend pendiente</p>"
+                token = getattr(self.server, "token", "")
+                meta_tag = f'<meta name="ai-delegate-token" content="{token}">'
+                if "<head>" in content:
+                    content = content.replace("<head>", f"<head>\n    {meta_tag}", 1)
+                elif "</head>" in content:
+                    content = content.replace("</head>", f"    {meta_tag}\n</head>", 1)
+                else:
+                    content = meta_tag + content
+                self._send(content.encode("utf-8"), "text/html; charset=utf-8")
             elif path.startswith("/static/"):
                 self._static(path.removeprefix("/static/"))
             else:
@@ -90,6 +192,105 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, 404)
         except (OSError, ValueError, TypeError) as exc:
             self._json({"error": f"No se pudieron leer los datos: {exc}"}, 500)
+
+    def do_POST(self) -> None:
+        port = self.server.server_port
+        hosts = self.headers.get_all("Host", [])
+        if len(hosts) != 1 or hosts[0] not in {f"127.0.0.1:{port}", f"localhost:{port}"}:
+            self._json({"error": "Host no permitido"}, 403)
+            return
+
+        token = self.headers.get("X-AI-Delegate-Token", "")
+        expected = getattr(self.server, "token", "")
+        if not token or not hmac.compare_digest(token, expected):
+            self._json({"error": "Token inválido o ausente"}, 403)
+            return
+
+        origin = self.headers.get("Origin")
+        if origin and origin not in {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}:
+            self._json({"error": "Origin no permitido"}, 403)
+            return
+
+        ct = self.headers.get("Content-Type", "")
+        if ct.split(";")[0].strip().lower() != "application/json":
+            self._json({"error": "Content-Type debe ser application/json"}, 403)
+            return
+
+        cl = self.headers.get("Content-Length")
+        if not cl:
+            self._json({"error": "Falta Content-Length"}, 403)
+            return
+        try:
+            length = int(cl)
+        except ValueError:
+            self._json({"error": "Content-Length inválido"}, 403)
+            return
+        if length > 65536:
+            self._json({"error": "Cuerpo supera 64 KB"}, 403)
+            return
+
+        body_bytes = self.rfile.read(length)
+        if len(body_bytes) > 65536:
+            self._json({"error": "Cuerpo supera 64 KB"}, 403)
+            return
+
+        try:
+            body = json.loads(body_bytes.decode("utf-8"))
+        except Exception:
+            self._json({"error": "JSON inválido"}, 400)
+            return
+
+        path = unquote(urlsplit(self.path).path)
+        try:
+            if path == "/api/config":
+                self._post_config(body)
+            elif path == "/api/master":
+                self._post_master(body)
+            elif path == "/api/doctor":
+                self._post_doctor(body)
+            else:
+                self._json({"error": "Ruta inexistente"}, 404)
+        except DelegateError as exc:
+            self._json({"error": str(exc)}, 400)
+        except Exception as exc:
+            self._json({"error": f"Error procesando petición: {exc}"}, 500)
+
+    def _post_config(self, body: dict) -> None:
+        if not isinstance(body, dict) or "changes" not in body or not isinstance(body["changes"], dict):
+            self._json({"error": "Falta el campo 'changes' con las modificaciones"}, 400)
+            return
+
+        changes = body["changes"]
+        invalid_keys = [k for k in changes if not _is_allowed_config_key(k)]
+        if invalid_keys:
+            self._json({"error": f"Claves no permitidas: {', '.join(invalid_keys)}", "invalid": invalid_keys}, 400)
+            return
+
+        cfg = config.load()
+        for k, v in changes.items():
+            err = _validate_change_value(k, v, cfg)
+            if err:
+                self._json({"error": err}, 400)
+                return
+
+        new_cfg = config.write_config_updates(changes)
+        self._json({"config": new_cfg})
+
+    def _post_master(self, body: dict) -> None:
+        name = body.get("name") if isinstance(body, dict) else None
+        if not name:
+            self._json({"error": "Falta el nombre de la maestra"}, 400)
+            return
+        try:
+            install.set_master(name, config.load(), yes=True)
+            self._json({"ok": True, "master": name})
+        except Exception as exc:
+            self._json({"error": str(exc)}, 400)
+
+    def _post_doctor(self, body: dict) -> None:
+        live = bool(body.get("live", False)) if isinstance(body, dict) else False
+        results = install.run_doctor(live=live, timeout_s=120.0)
+        self._json(results)
 
     def _static(self, name: str) -> None:
         file = STATIC / name
@@ -103,9 +304,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def create_server(port: int = 8765) -> ThreadingHTTPServer:
-    """Crea el servidor limitado a la interfaz local."""
+    """Crea el servidor limitado a la interfaz local con token en memoria."""
     try:
-        return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        server.token = secrets.token_urlsafe(32)
+        return server
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             raise DelegateError(f"El puerto {port} está ocupado; usa --port") from exc

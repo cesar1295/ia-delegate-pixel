@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import os
-from dataclasses import dataclass
+import sys
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
-from . import checks, prompt, runs, summary, worktree
+from . import checks, config, escalation, prompt, report, routing, runners, runs, stats, summary, worktree
 from .runners import AgentResult, Runner
 from .runs import RunMeta
 from .sanitize import sanitize
@@ -22,6 +23,8 @@ class Session:
     timeout_s: int
     check_timeout_s: int
     max_fix_rounds: int
+    escalate_after: int = 3
+    cfg: dict | None = None
 
 
 def drive(session: Session, text: str, label: str) -> AgentResult:
@@ -43,25 +46,41 @@ def _drive(session: Session, text: str, label: str) -> AgentResult:
     meta = session.meta
     result = agent_round(session, text, label)
     fixes = 0
+    cfg = session.cfg or config.load()
+    escalate_after = session.escalate_after
+
     while meta.status != "sin-cambios" and result.ok and meta.mode == "write" and meta.check_cmd:
         meta.phase = "checks"
         runs.save(meta, session.run_dir)
         check = checks.run(meta.check_cmd, Path(meta.workdir), session.check_timeout_s)
         meta.last_check = {"cmd": meta.check_cmd, "ok": check.ok, "exit_code": check.exit_code}
         runs.write_text(session.run_dir, "checks.log", check.output)
-        if check.ok or fixes >= session.max_fix_rounds:
+        if check.ok:
             break
+
+        if fixes > 0 and meta.corrections >= escalate_after:
+            result = escalation.escalate_run(meta, session.run_dir, cfg, session=session)
+            if meta.status == "escalado-a-main":
+                break
+            fixes = 0
+            continue
+
+        if fixes >= session.max_fix_rounds:
+            break
+
         fixes += 1
         output = sanitize(check.output, source="la salida de los checks", on_secret="redact")
         result = agent_round(session, prompt.compose_check_failure(meta.check_cmd, output), f"corrección {fixes}")
         meta.fix_rounds += 1
-    if meta.status != "sin-cambios":
+
+    if meta.status not in {"sin-cambios", "escalado-a-main"}:
         meta.status = final_status(meta, result)
-    if meta.worktree and meta.mode == "write":
+    if meta.worktree and meta.mode == "write" and Path(meta.worktree).exists():
         meta.diffstat = worktree.diffstat_line(Path(meta.worktree), meta.base_commit or "HEAD")
-    runs.add_event(meta, "delivered" if meta.status in {"ok", "listo-para-revisar"} else "failed",
-                   "" if meta.status in {"ok", "listo-para-revisar"} else
-                   "sin cambios" if meta.status == "sin-cambios" else meta.status)
+    if meta.status != "escalado-a-main":
+        runs.add_event(meta, "delivered" if meta.status in {"ok", "listo-para-revisar"} else "failed",
+                       "" if meta.status in {"ok", "listo-para-revisar"} else
+                       "sin cambios" if meta.status == "sin-cambios" else meta.status)
     runs.save(meta, session.run_dir)
     return result
 

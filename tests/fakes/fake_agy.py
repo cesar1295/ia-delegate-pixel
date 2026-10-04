@@ -10,13 +10,18 @@ def emit(event):
     print(json.dumps(event), flush=True)
 
 
+if "--version" in sys.argv:
+    print("agy 0.1.0")
+    sys.exit(0)
+
 emit({"event": "init", "conversation_id": "agy-conv-1", "init": {"cwd": str(Path.cwd())}})
 if "NIEGA_PRIMERO" in sys.argv[-1] and "--conversation" not in sys.argv:
     emit({"event": "result", "result": {"status": "SUCCESS", "response": "",
                                         "denied_actions": [{"action": "command", "display_name": "RunCommand"}]}})
     sys.exit(0)
 if "accept-edits" in sys.argv:
-    Path("hecho.txt").write_text("hecho por agy\n")
+    p = Path("hecho.txt")
+    p.write_text((p.read_text() if p.exists() else "") + "hecho por agy\n")
 emit({"event": "step_update", "step_update": {"step_type": "agent_response", "text_delta": "lis"}})
 emit({"event": "step_update", "step_update": {"step_type": "agent_response", "text_delta": "to"}})
 for state in ("ACTIVE", "DONE"):

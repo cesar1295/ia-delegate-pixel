@@ -323,73 +323,102 @@ def setup(args, cfg: dict) -> int:
     return 0 if ready else 1
 
 
+def set_master(name: str, cfg: dict | None = None, yes: bool = True) -> None:
+    cfg = cfg or config.load()
+    detected = detect_all()
+    old = config.main_name(cfg)
+    if name not in detected or not detected[name].path:
+        raise DelegateError(f"IA no instalada: {name}")
+    writer = Writer()
+    if not update_config(writer, name, cfg["user_name"], {}):
+        raise DelegateError("No se pudo actualizar la configuración de la maestra.")
+    new_cfg = {**cfg, "main": name}
+    instructions(writer, new_cfg, yes, old if old != name else None)
+    hooks(writer, name == "claude", yes)
+
+
 def master(args, cfg: dict) -> int:
     detected = detect_all()
     old = config.main_name(cfg)
-    if not args.name:
+    if not getattr(args, "name", None):
         print(f"Maestra: {old}; candidatos instalados: " + ", ".join(n for n, d in detected.items() if d.path))
         return 0
-    if args.name not in detected or not detected[args.name].path:
-        raise DelegateError(f"IA no instalada: {args.name}")
-    writer = Writer()
-    if not update_config(writer, args.name, cfg["user_name"], {}):
-        return 1
-    cfg = {**cfg, "main": args.name}
-    instructions(writer, cfg, False, old if old != args.name else None)
-    hooks(writer, args.name == "claude", False)
+    set_master(args.name, cfg, yes=getattr(args, "yes", True))
     print(f"✓ Maestra: {args.name}")
     return 0
 
 
-def doctor(args, cfg: dict | None = None) -> int:
-    failed = False
-    def check(label, ok, fix):
-        nonlocal failed
-        failed |= not ok
-        print(f"{'✓' if ok else '✗'} {label}" + (f": {fix}" if not ok else ""))
-    check("Python ≥3.11", sys.version_info >= (3, 11), "instala Python ≥3.11")
-    check("git con identidad", requirements(), "instala git y configura user.name/user.email")
+def run_doctor(live: bool = False, cfg: dict | None = None, timeout_s: float = 120.0) -> list[dict[str, Any]]:
+    deadline = time.monotonic() + timeout_s
+    results: list[dict[str, Any]] = []
+
+    def check(label: str, ok: bool, fix: str = "", detail: str = "") -> None:
+        results.append({"check": label, "ok": ok, "detail": detail, "fix": fix if not ok else ""})
+
+    check("Python ≥3.11", sys.version_info >= (3, 11), "instala Python ≥3.11", sys.version.split()[0])
+    git_ok = requirements()
+    check("git con identidad", git_ok, "instala git y configura user.name/user.email")
+
     link = Path.home() / ".local/bin/ai-delegate"
-    check("Enlace en PATH", link.is_symlink() and link.resolve() == ROOT / "ai_delegate.py" and shutil.which("ai-delegate") == str(link), "ejecuta setup y agrega ~/.local/bin a PATH")
+    link_ok = link.is_symlink() and link.resolve() == ROOT / "ai_delegate.py" and shutil.which("ai-delegate") == str(link)
+    check("Enlace en PATH", link_ok, "ejecuta setup y agrega ~/.local/bin a PATH")
+
     try:
-        cfg = config.load()
-        valid = config.config_path().exists() and config.main_name(cfg) in cfg["agents"]
+        loaded_cfg = config.load()
+        valid = config.config_path().exists() and config.main_name(loaded_cfg) in loaded_cfg["agents"]
     except DelegateError:
-        cfg, valid = copy.deepcopy(config.DEFAULTS), False
+        loaded_cfg, valid = copy.deepcopy(config.DEFAULTS), False
+    cfg = cfg or loaded_cfg
     check("Config válida", valid, "ejecuta ai-delegate setup")
+
     detected = detect_all()
     name = config.main_name(cfg)
-    check("Maestra detectada", bool(detected.get(name) and detected[name].path), "instala la CLI de la maestra")
-    for agent in cfg["agents"]:
+    check("Maestra detectada", bool(detected.get(name) and detected[name].path), "instala la CLI de la maestra", name)
+
+    for agent in cfg.get("agents", {}):
+        version = None
         try:
             runner = runners.get(agent, cfg)
             runner.ensure_available()
             proc = subprocess.run([runner.binary, "--version"], capture_output=True, text=True, timeout=5)
             version = proc.stdout.splitlines()[0] if proc.returncode == 0 and proc.stdout.strip() else None
-            check(f"{agent}: binario y versión {version or '?'}", bool(version), "instala o corrige agents.<nombre>.bin")
+            check(f"{agent}: binario y versión {version or '?'}", bool(version), "instala o corrige agents.<nombre>.bin", version or "")
         except (DelegateError, OSError, subprocess.SubprocessError):
             check(f"{agent}: binario y versión", False, "instala o corrige agents.<nombre>.bin")
+
         item = detected.get(agent)
-        check(f"{agent}: sesión" + (" desconocida" if item and item.logged_in is None else ""), bool(item and item.logged_in is not False), LOGIN.get(agent, "inicia sesión"))
+        sess_ok = bool(item and item.logged_in is not False)
+        sess_label = f"{agent}: sesión" + (" desconocida" if item and item.logged_in is None else "")
+        check(sess_label, sess_ok, LOGIN.get(agent, "inicia sesión"))
+
         try:
             quota.get(agent, cfg, [])
             check(f"{agent}: cuota legible", True, "")
         except (OSError, ValueError, TypeError, KeyError):
             check(f"{agent}: cuota legible", False, "revisa los datos de cuota")
-        if args.live:
+
+        if live:
+            time_left = max(1.0, deadline - time.monotonic())
+            if time_left <= 0:
+                check(f"{agent}: live", False, "tiempo límite de doctor agotado")
+                continue
             start = time.monotonic()
             try:
                 with tempfile.TemporaryDirectory() as folder:
                     runner = runners.get(agent, cfg)
                     runner.ensure_available()
-                    result = runner.run("Responde solo: OK", "read", Path(folder), None, 60, Path(folder))
+                    run_timeout = min(60, int(time_left))
+                    result = runner.run("Responde solo: OK", "read", Path(folder), None, run_timeout, Path(folder))
                 ok = result.ok and result.last_message.strip() == "OK"
             except (DelegateError, OSError):
                 ok = False
-            check(f"{agent}: live {time.monotonic() - start:.1f} s", ok, "revisa login y CLI")
+            elapsed = time.monotonic() - start
+            check(f"{agent}: live {elapsed:.1f} s", ok, "revisa login y CLI")
+
     path = Path.home() / FILES.get(name, ".claude/CLAUDE.md")
     text = path.read_text() if path.exists() else ""
     check("Bloque de instrucciones", START in text and END in text, "ejecuta setup")
+
     if name == "claude":
         try:
             data = read_json(Path.home() / ".claude/settings.json")
@@ -398,7 +427,8 @@ def doctor(args, cfg: dict | None = None) -> int:
         except DelegateError:
             ok = False
         check("Hooks de Claude", ok, "ejecuta setup")
-    if detected["agy"].path:
+
+    if detected.get("agy") and detected["agy"].path:
         try:
             data = read_json(Path.home() / ".gemini/antigravity-cli/settings.json")
             expected = json.loads((ROOT / "setup/agy-permissions.json").read_text())["permissions"]
@@ -406,6 +436,7 @@ def doctor(args, cfg: dict | None = None) -> int:
         except DelegateError:
             ok = False
         check("Permisos de agy", ok, "ejecuta setup")
+
     try:
         config.data_dir().mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryFile(dir=config.data_dir()):
@@ -414,4 +445,14 @@ def doctor(args, cfg: dict | None = None) -> int:
     except OSError:
         writable = False
     check("Carpeta de datos escribible", writable, "corrige permisos de la carpeta de datos")
+
+    return results
+
+
+def doctor(args, cfg: dict | None = None) -> int:
+    results = run_doctor(live=getattr(args, "live", False), cfg=cfg)
+    failed = False
+    for r in results:
+        failed |= not r["ok"]
+        print(f"{'✓' if r['ok'] else '✗'} {r['check']}" + (f": {r['fix']}" if not r["ok"] else ""))
     return int(failed)

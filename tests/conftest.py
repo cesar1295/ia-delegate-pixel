@@ -9,6 +9,18 @@ FAKES = Path(__file__).resolve().parent / "fakes"
 sys.path.insert(0, str(ROOT))
 
 
+(ROOT / "hecho.txt").unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def clean_root_hecho():
+    (ROOT / "hecho.txt").unlink(missing_ok=True)
+    yield
+    if (ROOT / "hecho.txt").exists():
+        (ROOT / "hecho.txt").unlink(missing_ok=True)
+        raise AssertionError("Se creó hecho.txt en la raíz del repositorio")
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     """Datos y config de ai-delegate aislados; los agentes apuntan a los CLIs falsos."""
@@ -19,6 +31,8 @@ def home(tmp_path, monkeypatch):
         f'bin = "{FAKES / "fake_codex.py"}"\n'
         "[agents.agy]\n"
         f'bin = "{FAKES / "fake_agy.py"}"\n'
+        "[strategy]\n"
+        'mode = "routing"\n'
     )
     monkeypatch.setenv("AI_DELEGATE_HOME", str(data))
     monkeypatch.setenv("AI_DELEGATE_CONFIG", str(cfg))

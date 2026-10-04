@@ -3,7 +3,7 @@ import pytest
 from aidelegate import config, routing
 from aidelegate.errors import DelegateError, MainSessionTask
 
-CFG = config.DEFAULTS
+CFG = {**config.DEFAULTS, "strategy": {**config.DEFAULTS["strategy"], "mode": "routing"}}
 
 
 def test_programming_goes_to_codex_and_simple_tasks_to_agy():
