@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Oficina ai-delegate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="sprites.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="office">
+    <header><h1>OFICINA AI-DELEGATE</h1><span id="connection" class="connection" role="status"><span class="dot"></span><span id="connection-text">SIN CONEXIÓN</span></span></header>
+    <main>
+      <section class="scene-column" aria-label="Oficina pixel">
+        <div id="scene" class="scene">
+          <canvas id="office-canvas" width="320" height="180" role="img" aria-label="Claude: idle. Codex: idle. agy: idle."></canvas>
+          <div id="board" class="board"><strong>PIZARRÓN</strong><div class="counts"><div><b id="running-count">0</b><span>EN CURSO</span></div><div><b id="review-count">0</b><span>REVISIÓN</span></div><div><b id="merged-count">0</b><span>HOY</span></div></div></div>
+          <div id="scene-layers"></div>
+        </div>
+      </section>
+      <aside>
+        <section class="panel"><h2>Equipo</h2><div id="team"></div></section>
+        <section class="panel"><h2>Tareas</h2><div id="runs"></div></section>
+        <section class="panel"><h2>Aceptación</h2><div id="stats"></div></section>
+      </aside>
+    </main>
+  </div>
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <section id="detail-panel" class="detail-panel" role="dialog" aria-modal="true" aria-label="Detalle de corrida" tabindex="-1">
+      <button id="close-detail" class="close-detail" aria-label="Cerrar detalle">✕</button>
+      <div id="detail-content" aria-live="polite"></div>
+    </section>
+  </div>
+</body>
+</html>
