@@ -46,13 +46,15 @@ DEFAULTS: dict[str, Any] = {
     },
     # home vacío = tu HOME normal (perfil ya autenticado)
     "agents": {
+        "claude": {"type": "claude", "bin": "auto", "display": "Claude", "color": "#d97757", "quota": "none", "role_text": "funcionalidades, especificaciones y revisiones; diseño visual"},
         "codex": {"bin": "codex", "home": "", "model": "", "type": "codex",
-                  "display": "Codex", "color": "#3ddc97", "quota": "codex"},
+                  "display": "Codex", "color": "#3ddc97", "quota": "codex", "role_text": "funcionalidades, bugs, refactors, endpoints, implementar especificaciones de diseño, revisiones de código"},
         "agy": {"bin": "agy", "home": "", "model": "", "type": "agy",
-                "display": "agy", "color": "#7b8cff", "quota": "budget", "daily_token_budget": 0},
+                "display": "agy", "color": "#7b8cff", "quota": "budget", "daily_token_budget": 0, "role_text": "tareas acotadas (tests sencillos, docs, datos de prueba, i18n), resumir repos, investigación web e imágenes; en la terminal solo tiene comandos de lectura"},
     },
     # "/ruta/al/repo" = { check = "npm run lint && npm test" }
-    "main": {"name": "claude", "display": "Claude", "color": "#d97757"},
+    "main": "claude",
+    "user_name": os.environ.get("USER", "usuario").capitalize(),
     "fallback_order": ["codex", "agy"],
     "projects": {},
 }
@@ -87,6 +89,7 @@ def config_path() -> Path:
 def load(path: Path | None = None) -> dict[str, Any]:
     path = path or config_path()
     cfg = copy.deepcopy(DEFAULTS)
+    cfg["user_name"] = os.environ.get("USER", "usuario").capitalize()
     if not path.exists():
         return cfg
     try:
@@ -94,6 +97,7 @@ def load(path: Path | None = None) -> dict[str, Any]:
     except tomllib.TOMLDecodeError as exc:
         raise DelegateError(f"La config {path} no es TOML válido: {exc}") from exc
     _merge(cfg, user)
+    cfg["main"] = main_name(cfg)
     return cfg
 
 
@@ -103,3 +107,8 @@ def _merge(base: dict[str, Any], extra: dict[str, Any]) -> None:
             _merge(base[key], value)
         else:
             base[key] = value
+
+
+def main_name(cfg: dict) -> str:
+    value = cfg.get("main", "claude")
+    return value.get("name", "claude") if isinstance(value, dict) else value

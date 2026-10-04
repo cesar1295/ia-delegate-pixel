@@ -106,7 +106,7 @@ def budget(name: str, agent: dict, metas: list[RunMeta], now: datetime) -> dict:
 
 def get(name: str, cfg: dict, metas: list[RunMeta], now: datetime | None = None) -> dict:
     now = now or datetime.now()
-    if name == cfg["main"]["name"]:
+    if name == "claude" and name == config.main_name(cfg):
         try:
             data = json.loads((config.data_dir() / "claude-quota.json").read_text())
             return _windows(data["windows"], "archivo")

@@ -25,7 +25,19 @@ def main(argv: list[str] | None = None) -> int:
         return status_main(argv[1:])
     args = parse(argv)
     try:
-        cfg = config.load()
+        if args.command == "doctor":
+            from .install import doctor
+            return doctor(args)
+        try:
+            cfg = config.load()
+        except DelegateError:
+            if args.command != "setup":
+                raise
+            import copy
+            cfg = copy.deepcopy(config.DEFAULTS)
+        if args.command in {"setup", "master"}:
+            from . import install
+            return getattr(install, args.command)(args, cfg)
         return COMMANDS[args.command](args, cfg)
     except DelegateError as exc:
         print(f"ai-delegate: {exc}", file=sys.stderr)
