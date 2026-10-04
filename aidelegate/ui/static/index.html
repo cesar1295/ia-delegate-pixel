@@ -13,11 +13,11 @@
 </head>
 <body>
   <div class="office">
-    <header><h1>OFICINA AI-DELEGATE</h1><span id="connection" class="connection" role="status"><span class="dot"></span><span id="connection-text">SIN CONEXIÓN</span></span></header>
+    <header><div class="office-title"><h1>OFICINA AI-DELEGATE</h1><span class="day-clock"><span id="day-phase"></span><span id="day-time"></span></span></div><span id="connection" class="connection" role="status"><span class="dot"></span><span id="connection-text">SIN CONEXIÓN</span></span></header>
     <main>
       <section class="scene-column" aria-label="Oficina pixel">
         <div id="scene" class="scene">
-          <canvas id="office-canvas" width="320" height="200" role="img" aria-label="Claude: idle. Codex: idle. agy: idle."></canvas>
+          <canvas id="office-canvas" width="320" height="200" role="img" aria-label="Oficina de agentes"></canvas>
           <div id="board" class="board"><strong>PIZARRÓN</strong><div class="counts"><div><b id="running-count">0</b><span>EN CURSO</span></div><div><b id="review-count">0</b><span>REVISIÓN</span></div><div><b id="merged-count">0</b><span>HOY</span></div></div></div>
           <div id="scene-layers"></div>
         </div>

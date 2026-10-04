@@ -10,7 +10,9 @@
   const emotes = {sleep: 'sleep', fixing: 'alert', checks: 'wait', review: 'question', reviewing: 'look',
     waiting: 'question', failed: 'fail', quota: 'sleep', celebrate: 'done'};
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
-  const demo = new URLSearchParams(location.search).get('demo') === '1';
+  const params = new URLSearchParams(location.search);
+  const demo = params.get('demo') === '1';
+  const demoMain = ['codex', 'agy'].includes(params.get('maestra')) ? params.get('maestra') : 'claude';
   const $ = id => document.getElementById(id);
   const canvas = $('office-canvas'), scene = $('scene');
   const offscreen = document.createElement('canvas');
@@ -55,6 +57,12 @@
     canvas.style.width = `${canvas.width}px`; canvas.style.height = `${canvas.height}px`;
     scene.style.width = `${canvas.width}px`; scene.style.height = `${canvas.height}px`;
     output.imageSmoothingEnabled = false;
+    scene.classList.toggle('scale-one', scale === 1);
+    const font = base => `${Math.max(6, base * Math.min(1, scale / 2))}px`;
+    scene.style.setProperty('--scene-font', font(10));
+    scene.style.setProperty('--scene-number', font(16));
+    scene.style.setProperty('--scene-caption', font(8));
+    scene.style.setProperty('--scene-extra', font(9));
     Object.assign($('board').style, {left: `${112 * scale}px`, top: `${12 * scale}px`,
       width: `${96 * scale}px`, height: `${46 * scale}px`});
     for (const name of names) {
@@ -103,8 +111,7 @@
     rect(0, 78, 320, 2, '#3a3358');
     for (let y = 80; y < height; y += 16) for (let x = 0; x < 320; x += 16)
     rect(x, y, 16, Math.min(16, height - y), ((x / 16 + (y - 80) / 16) % 2) ? '#41332e' : '#3a2e2a');
-    rect(20, 14, 56, 40, '#1a1726'); rect(22, 16, 52, 36, '#1d2b53'); rect(62, 20, 4, 4, '#ffec27');
-    [[28,22],[40,30],[50,19],[34,40],[58,44]].forEach(([x,y]) => rect(x,y,1,1,'#fff1e8'));
+    rect(20, 14, 56, 40, '#1a1726');
     rect(110,10,100,50,'#c2c3c7'); rect(112,12,96,46,'#fff1e8');
     rect(292,68,12,12,'#b45a3c'); rect(291,66,14,2,'#8a3f2a');
     [[294,54,3,12],[298,50,3,16],[302,56,3,10]].forEach(r => rect(...r,'#2fbf71'));
@@ -190,6 +197,91 @@
       if (walking && !covered) foreground.push(name);
     }
   }
+  const phases = [
+    {label: 'MADRUGADA', sky: ['#0b1026', '#121a3a', '#1d2b53'], overlay: [10, 12, 40, .35]},
+    {label: 'MAÑANA', sky: ['#5fb4ff', '#8fd3ff', '#c7ecff'], overlay: [0, 0, 0, 0]},
+    {label: 'TARDE', sky: ['#4fa8ff', '#7fc4ff', '#ffe7a8'], overlay: [255, 190, 90, .06]},
+    {label: 'TARDE-NOCHE', sky: ['#3b2a6b', '#c4517a', '#ff9a5a'], overlay: [255, 120, 80, .10]},
+    {label: 'NOCHE', sky: ['#0f1430', '#16204a', '#1d2b53'], overlay: [20, 20, 60, .25]}
+  ];
+  const stars = [[28, 22], [40, 30], [50, 19], [34, 40], [58, 44], [26, 34], [68, 40]];
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const mix = (a, b, progress) => a.map((value, i) => value + (b[i] - value) * progress);
+  const rgba = color => `rgba(${color.join(',')})`;
+  let dayPhase = null, previousPhase = null, phaseStarted = 0;
+  function updateClock() {
+    const now = new Date(), hourParam = new URLSearchParams(location.search).get('hora');
+    const fixed = hourParam !== null && /^\d{1,2}$/.test(hourParam) && Number(hourParam) < 24;
+    const hour = fixed ? Number(hourParam) : now.getHours();
+    const next = hour < 6 ? 0 : hour < 12 ? 1 : hour < 17 ? 2 : hour < 20 ? 3 : 4;
+    if (next !== dayPhase) {
+      previousPhase = dayPhase;
+      dayPhase = next;
+      phaseStarted = performance.now();
+    }
+    $('day-phase').textContent = `· ${phases[next].label}`;
+    $('day-time').textContent = ` · ${String(hour).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  }
+  function skyDetails(phase, t, alpha) {
+    ctx.globalAlpha = alpha;
+    const drift = motion.matches ? 0 : Math.floor(t / 2000) % 52;
+    const cloud = (x, y, w, h) => {
+      const shifted = 22 + (x - 22 + drift) % 52;
+      rect(shifted, y, w, h, '#fff1e8');
+      rect(shifted - 52, y, w, h, '#fff1e8');
+    };
+    if (phase === 0 || phase === 4) {
+      rect(62, 20, 4, 4, phase === 0 ? '#fff1e8' : '#ffec27');
+      if (phase === 0) rect(63, 21, 1, 1, '#c2c3c7');
+      const points = phase === 0 ? [...stars.slice(0, 6), [44, 24], stars[6]] : stars;
+      points.forEach(([x, y], i) => {
+        if (phase === 0 && !motion.matches && (i === 1 || i === 5)
+          && (t + (i === 5 ? 1000 : 0)) % 2000 >= 1500) return;
+        rect(x, y, 1, 1, '#fff1e8');
+      });
+    } else if (phase === 1) {
+      rect(60, 20, 6, 6, '#ffd75e'); rect(62, 22, 2, 2, '#fff1e8');
+      cloud(28, 22, 10, 3); cloud(30, 20, 6, 2);
+      cloud(46, 30, 12, 3); cloud(48, 28, 6, 2);
+    } else if (phase === 2) {
+      rect(60, 30, 6, 6, '#ffb627'); cloud(30, 24, 10, 3); cloud(32, 22, 6, 2);
+    } else {
+      rect(58, 46, 6, 6, '#ff6b4a');
+      rect(28, 20, 1, 1, '#fff1e8'); rect(40, 18, 1, 1, '#fff1e8');
+    }
+    ctx.globalAlpha = 1;
+  }
+  function drawDaylight(t) {
+    const progress = motion.matches || previousPhase === null ? 1 : Math.min(1, (t - phaseStarted) / 2000);
+    const current = phases[dayPhase], previous = phases[previousPhase ?? dayPhase];
+    rect(0, 0, 320, height, rgba(mix(previous.overlay, current.overlay, progress)));
+    if (dayPhase === 0 || dayPhase === 4) {
+      names.forEach(name => {
+        const [dx, dy] = desks[name];
+        rect(dx + 17, dy - 6, 14, 1, 'rgba(207, 232, 255, 0.6)');
+        const active = ['working', 'fixing', 'checks'].includes(safeState(name));
+        rect(dx + 23, dy - 3, 2, 2, active && Math.floor(t / 500) % 2 ? '#fff1e8' : accents[name]);
+      });
+      const main = names.find(name => state.agents[name].role === 'main');
+      if (main) {
+        const [dx, dy] = desks[main];
+        ctx.fillStyle = 'rgba(255, 215, 94, 0.12)';
+        ctx.beginPath(); ctx.moveTo(dx + 40, dy - 10); ctx.lineTo(dx + 49, dy - 10);
+        ctx.lineTo(dx + 53, dy); ctx.lineTo(dx + 36, dy); ctx.closePath(); ctx.fill();
+        rect(dx + 44, dy - 10, 1, 10, '#3a3358'); rect(dx + 42, dy - 12, 5, 2, '#ffd75e');
+      }
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(22, 16, 52, 36); ctx.clip();
+    current.sky.forEach((color, i) => {
+      rect(22, 16 + i * 12, 52, 12, rgba([...mix(rgb(previous.sky[i]), rgb(color), progress), 1]));
+    });
+    if (progress < 1) skyDetails(previousPhase, t, 1 - progress);
+    skyDetails(dayPhase, t, progress);
+    ctx.restore();
+  }
+  updateClock();
+  setInterval(updateClock, 30000);
+  addEventListener('popstate', updateClock);
   let lastFrame = -Infinity;
   function frame(t) {
     if (t-lastFrame >= 83) {
@@ -206,6 +298,7 @@
         miniJobs(name,t,jobs);
       });
       jobs.sort((a,b) => a.y-b.y || a.x-b.x).forEach(job => job.draw());
+      drawDaylight(t);
       updateBubbleOverlap();
       output.drawImage(offscreen,0,0,canvas.width,canvas.height);
     }
@@ -215,7 +308,7 @@
     running:['--warn','EN CURSO'], 'listo-para-revisar':['--review','REVISIÓN'], ok:['--ok','LISTO'],
     integrado:['--ok','INTEGRADO'],
     'sin-cambios':['--err','SIN CAMBIOS'], 'cuota-agotada':['--err','SIN CUOTA'], descartado:['--muted',
-    'DESCARTADO'], 'dry-run':['--muted','DRY-RUN'], 'escalado-a-main':['--claude','ESCALADO']
+    'DESCARTADO'], 'dry-run':['--muted','DRY-RUN'], 'escalado-a-main':['--muted','ESCALADO']
   };
   function stateColor(s) {
     if (['working','fixing','checks'].includes(s)) return '--warn';
@@ -229,7 +322,8 @@
   }
   function statusPill(status) {
     const [color,label] = statusMap[status] || ['--err',String(status || '').replace(/-/g,' ').toUpperCase()];
-    return pill(label,color);
+    const main = names.find(name => state.agents[name].role === 'main');
+    return pill(label, status === 'escalado-a-main' && main ? accents[main] : color);
   }
   function render(data) {
     const agents = Array.isArray(data.agents) ? data.agents : [];
@@ -494,7 +588,7 @@
     r.emoteUntil=t+(['failed','discarded'].includes(event.type)?1500:900);
     if (event.type==='feedback') {
       const main=names.find(name=>state.agents[name].role==='main');
-      runtime[main].feedbackUntil=t+900;
+      if (runtime[main]) runtime[main].feedbackUntil=t+900;
     }
   }
   function enqueue(event) {
@@ -579,6 +673,10 @@
       look:{hair:'#2e5d4b',color:'#f0a500'}}
     ];
     agents.forEach(agent => {
+      agent.role = agent.name === demoMain ? 'main' : 'agent';
+    });
+    agents.sort((a, b) => Number(b.role === 'main') - Number(a.role === 'main'));
+    agents.forEach(agent => {
       agent.state = agent.role === 'main' ? 'waiting' : 'working';
       agent.detail = agent.role === 'main' ? 'esperando a Alex' : 'Implementando tarea';
       agent.run_id = `demo-${agent.name}`; agent.subagents = [];
@@ -619,7 +717,9 @@
     setInterval(() => {
       demoStep=demoStep%6+1;
       const types=['assigned','assigned','delivered','feedback','delivered','merged'];
-      const targets=['codex','opencode','agy','codex','codex','codex'];
+      const worker = demoMain === 'codex' ? 'claude' : 'codex';
+      const other = demoMain === 'agy' ? 'claude' : 'agy';
+      const targets=[worker,'opencode',other,worker,worker,worker];
       demoEvents.push({id:demoEvents.length+1,type:types[demoStep-1],agent:targets[demoStep-1]});
       render(demoData());
     },5000);

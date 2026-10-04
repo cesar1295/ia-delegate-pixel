@@ -497,3 +497,34 @@ text-align:left;
 .detail-panel p,.detail-panel pre,.detail-panel ul  {
   margin:0 0 16px
 }
+
+/* TODO(diseño): el espaciado del título y la hora usa el gap existente del encabezado. */
+.office-title {
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.day-clock {
+  font:400 10px var(--pixel);
+  color:var(--muted);
+}
+.board,.agent-name,.bubble {
+  font-size:var(--scene-font,10px);
+}
+.counts b {
+  font-size:var(--scene-number,16px);
+}
+.counts span {
+  font-size:var(--scene-caption,8px);
+}
+.mini-extra {
+  font-size:var(--scene-extra,9px);
+}
+.scale-one .counts span,.scale-one .board strong {
+  display:none;
+}
+@media(max-width:699px) {
+  #day-time {
+    display:none;
+  }
+}
