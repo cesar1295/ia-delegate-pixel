@@ -137,6 +137,116 @@ items = {
 for k, v in items.items():
     assert len({len(r) for r in v}) == 1, k
 
+# --- v4: espaldas (up) y perfil (side, mirando a la derecha; izquierda = espejo) ---
+def back_head(name):
+    rows = [
+        row(".....", "kkkkkk", "....."),
+        row("....", "k", "hhhhhh", "k", "...."),
+        row("...", "k", "hhhhhhhh", "k", "..."),
+        row("...", "k", "hhhhhhhh", "k", "..."),
+        row("...", "k", "hhhhhhhh", "k", "..."),
+        row("...", "k", "hhhhhhhh", "k", "..."),
+        row("...", "k", "hhhhhhhh", "k", "..."),
+        row("...", "k", "shhhhhhs", "k", "..."),
+        row("....", "k", "hhhhhh", "k", "...."),
+        row(".....", "k", "SSSS", "k", "....."),
+    ]
+    if name == "codex":
+        rows[1] = row("...", "a", "hhhhhhhh", "a", "...")
+        for i in (3, 4, 5):
+            rows[i] = row(".", "aA", "k", "hhhhhhhh", "k", "Aa", ".")
+        rows[6] = row("..", "a", "k", "hhhhhhhh", "k", "a", "..")
+    if name == "agy":
+        rows[2] = row("...", "k", "hhhhhhah", "k", "...")
+        for i in (7, 8, 9):
+            rows[i] = row("...", "k", "HHHHHHHH", "k", "...")
+    return rows
+
+BACK_TORSO = [
+    row("..", "k", "cccccccccc", "k", ".."),
+    row(".", "k", "cccccccccccc", "k", "."),
+    row(".", "k", "CccccccccccC", "k", "."),
+    row(".", "k", "CccccccccccC", "k", "."),
+]
+
+def side_head(name):
+    rows = [
+        row("......", "kkkkk", "....."),
+        row(".....", "k", "hhhhh", "k", "...."),
+        row("....", "k", "hhhhhhh", "k", "..."),
+        row("....", "k", "hhhhsss", "k", "..."),
+        row("....", "k", "hhhssss", "k", "..."),
+        row("....", "k", "hhsssks", "k", "..."),
+        row("....", "k", "hsssssss", "k", ".."),
+        row("....", "k", "sssssks", "k", "..."),
+        row(".....", "k", "sssss", "k", "...."),
+        row("......", "k", "SSS", "k", "....."),
+    ]
+    if name == "codex":
+        rows[4] = row("....", "k", "hhAaaas", "k", "...")
+        rows[5] = row("....", "k", "hhAaaks", "k", "...")
+    if name == "agy":
+        rows[2] = row("....", "k", "hhhhhah", "k", "...")
+        rows[6] = row("....", "k", "Hsssssss", "k", "..")
+        rows[7] = row("...", "kH", "sssssks", "k", "...")
+        rows[8] = row("...", "kH", "kssssk", ".....")
+    if name == "claude":
+        rows[6] = row("....", "k", "hssrssss", "k", "..")
+    return rows
+
+SIDE_BODY = {
+    "stand": [
+        row("....", "k", "cccccc", "k", "...."),
+        row("....", "k", "cccccc", "k", "...."),
+        row("....", "k", "Ccccc", "C", "k", "...."),
+        row("....", "k", "CccscC", "k", "...."),
+        row("....", "k", "Ccccc", "C", "k", "...."),
+        row("....", "k", "pppppp", "k", "...."),
+        row("....", "k", "pppppp", "k", "...."),
+        row(".....", "k", "pPpP", "k", "....."),
+        row(".....", "k", "pPpP", "k", "....."),
+        row(".....", "k", "pPpP", "k", "....."),
+        row(".....", "k", "bbbbb", "k", "...."),
+        row(".....", "kkkkkkk", "...."),
+        row("................"),
+        row("................"),
+    ],
+}
+SIDE_BODY["walkA"] = SIDE_BODY["stand"][:7] + [
+    row("....", "kpPk", "kPpk", "...."),
+    row("...", "kpPk", "..", "kPpk", "..."),
+    row("..", "kpPk", "....", "kPpk", ".."),
+    row("..", "kbbbk", "...", "kbbbk", "."),
+    row("..", "kkkkk", "...", "kkkkk", "."),
+    row("................"),
+    row("................"),
+]
+SIDE_BODY["walkB"] = SIDE_BODY["stand"]
+
+dirs = {}
+for name, seated in (("claude", claude), ("codex", codex), ("agy", agy), ("generic", generic)):
+    up_rows = back_head(name if name != "generic" else "claude") + BACK_TORSO
+    up = {pose: up_rows + legs for pose, legs in LEGS.items()}
+    sh = side_head(name if name != "generic" else "x")
+    if name == "claude":
+        torso0 = row("....", "k", "caaccc", "k", "....")
+        side_body = {pose: [torso0] + rows[1:] for pose, rows in SIDE_BODY.items()}
+    else:
+        side_body = SIDE_BODY
+    side = {pose: sh + side_body[pose] for pose in SIDE_BODY}
+    # sentado de espaldas frente al escritorio: cabeza + torso, sin piernas (las tapa el banco)
+    seated_back = back_head(name if name != "generic" else "claude") + BACK_TORSO + [
+        row(".", "k", "sCccccccccCs", "k", "."),
+        row("..", "k", "pppppppppp", "k", ".."),
+    ]
+    dirs[name] = {"down": bodies[name], "up": up, "side": side, "seated_back": seated_back}
+    for d, poses in dirs[name].items():
+        if d == "seated_back":
+            assert len(poses) == 16 and all(len(r) == 16 for r in poses), (name, d)
+            continue
+        for pose, rows in poses.items():
+            assert len(rows) == 24 and all(len(r) == 16 for r in rows), (name, d, pose, len(rows))
+
 art = {
     "size": {"character": [16, 16], "body": [16, 24], "mini": [10, 10], "emote": [7, 7]},
     "palettes": {
@@ -153,6 +263,7 @@ art = {
     },
     "characters": {"claude": claude, "codex": codex, "agy": agy, "generic": generic},
     "bodies": bodies,
+    "directions": dirs,
     "mini": mini,
     "items": items,
     "faceOriginCol": 4,
@@ -182,6 +293,8 @@ header = """// Arte pixel de la oficina de ai-delegate.
 // '_' conserva el pixel original.
 // bodies.<nombre>.<stand|walkA|walkB>: cuerpo completo 16x24 para caminar; paleta + palettes.pants.<nombre>.
 // characters.generic / bodies.generic: plantilla para IAs nuevas; su paleta se deriva de agents.<n>.look.
+// directions.<nombre>.<down|up|side>.<stand|walkA|walkB>: 16x24 en 4 direcciones (izquierda = side en
+// espejo); directions.<nombre>.seated_back: 16x16 sentado de espaldas frente a su monitor.
 // mini: becario (subagente) 10x10 con la paleta de su jefe. items: paper, paper_done, mug ('x' = celdas de
 // líquido, se llenan de abajo hacia arriba con palettes.mug_fill), puff (aparición de un becario).
 """
