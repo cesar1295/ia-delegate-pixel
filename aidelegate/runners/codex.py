@@ -13,6 +13,7 @@ SANDBOX = {"read": "read-only", "write": "workspace-write"}
 
 class CodexRunner(Runner):
     name = "codex"
+    supports_resume = True
 
     def argv(self, prompt: str, mode: str, cwd: Path, resume_id: str | None) -> list[str]:
         common = ["--json", "--skip-git-repo-check", "-c", f'sandbox_mode="{SANDBOX[mode]}"']
@@ -24,6 +25,14 @@ class CodexRunner(Runner):
 
     def parse_event(self, event: dict[str, Any], result: AgentResult, deltas: list[str]) -> None:
         kind = event.get("type")
+        item = event.get("item") or {}
+        identity = item.get("id")
+        names = " ".join(str(item.get(k, "")) for k in ("type", "tool", "name")).lower()
+        if (kind in {"item.started", "item.completed"} and identity is not None
+                and any(word in names for word in ("agent", "subagent", "spawn"))):
+            result.subagents = [s for s in result.subagents if s["id"] != identity]
+            if kind == "item.started":
+                result.subagents.append({"id": identity, "label": str(item.get("name") or item.get("tool") or item.get("type"))[:24]})
         if kind == "thread.started":
             result.thread_id = event.get("thread_id") or result.thread_id
         elif kind == "item.completed":

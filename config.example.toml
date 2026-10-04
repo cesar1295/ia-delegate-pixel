@@ -1,8 +1,10 @@
 # Copia a ~/.config/ai-delegate/config.toml y cambia solo lo que quieras;
 # lo que no pongas toma el valor por defecto (aidelegate/config.py).
 
+# fallback_order = ["codex", "agy"]
+
 [routing]
-# tipo = "codex" | "agy" | "main" (lo hace la sesión principal)
+# tipo = cualquier agente configurado | "main" (lo hace la sesión principal)
 # docs = "codex"
 
 [limits]
@@ -17,6 +19,7 @@
 
 [agents.agy]
 # model = ""
+# daily_token_budget = 0  # desconocido; configura un presupuesto para estimar porcentaje
 
 # Checks por proyecto cuando la detección automática no basta:
 # [projects."/home/usuario/Documentos/Proyectos/sportswear-ecommerce"]

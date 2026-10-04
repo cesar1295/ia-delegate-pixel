@@ -27,7 +27,9 @@ if "CUOTA" in prompt:
     print("ERROR: You've hit your usage limit (429)", file=sys.stderr)
     sys.exit(1)
 if resume or "FALLA_PRIMERO" not in prompt:
-    Path("hecho.txt").write_text("hecho\n")
+    if "SIN_CAMBIOS" not in prompt:
+        path = Path("hecho.txt")
+        path.write_text((path.read_text() if resume and path.exists() else "") + "hecho\n")
 lines = 40 if "LARGO" in prompt else 2
 emit({"type": "item.completed", "item": {"id": "i0", "type": "agent_message", "text": "\n".join(f"línea {i}" for i in range(lines))}})
 emit({"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 5}})

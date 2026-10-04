@@ -52,7 +52,7 @@ def _add_run(sub: argparse._SubParsersAction) -> None:
     run = sub.add_parser("run", help="Delegar una tarea (subcomando por defecto).")
     run.add_argument("task", nargs="*", help="la tarea en texto libre")
     run.add_argument("--task-file", help="lee la tarea de un archivo (especificaciones largas)")
-    run.add_argument("--to", choices=("auto", "codex", "agy"), default="auto")
+    run.add_argument("--to", default="auto")
     run.add_argument("--kind", help="tipo de tarea: feature, bugfix, test, docs, research, design…")
     run.add_argument("--dir", default=".", help="repo o carpeta de trabajo (por defecto, la actual)")
     run.add_argument("--mode", choices=("read", "write"), help="por defecto depende de --kind")

@@ -16,7 +16,7 @@ def test_hook(home, monkeypatch, capsys, event, state):
     data = json.loads((home / "claude-status.json").read_text())
     assert data["state"] == state
     assert data["detail"] == ("Read" if state == "working" else "")
-    assert set(data) == {"state", "detail", "ts"}
+    assert set(data) == {"state", "detail", "ts", "subagents"}
     assert capsys.readouterr() == ("", "")
 
 

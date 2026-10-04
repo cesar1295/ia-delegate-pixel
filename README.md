@@ -50,7 +50,7 @@ ai-delegate list | show <id> | stats
 
 - **Trabajo aislado**: en modo `write` dentro de un repo git, el agente trabaja en `~/.local/share/ai-delegate/worktrees/<id>`, en la rama `ai/<id>`. Tu copia no se toca hasta `merge`. `node_modules`, `.venv` y `venv` se enlazan desde tu copia para que los checks corran.
 - **Checks**: se detectan solos (scripts `lint`/`typecheck`/`test` de npm, pnpm, yarn o bun, o pytest). También puedes pasar `--check "cmd"` o `--check none`. Si fallan, la salida vuelve al agente hasta `--max-fix-rounds` veces (3 por defecto).
-- **Respaldo**: con `--to auto`, si un agente agota su cuota se reintenta con el otro.
+- **Respaldo**: con `--to auto`, si un agente agota su cuota se reintenta con los agentes de `fallback_order` que estén configurados.
 - **Corridas**: cada una deja `prompt.md`, `events.jsonl`, `last.md`, `checks.log` y `meta.json` en `~/.local/share/ai-delegate/runs/<id>/`. Las corridas cerradas de más de 7 días se borran solas. Las estadísticas viven aparte, en `ledger.jsonl`.
 - **Seguridad**: el subproceso recibe un entorno limpio (`--print-env` muestra solo los nombres). Antes de enviar algo se bloquean los secretos (`sk-…`, `ghp_…`, `*_TOKEN=…`, `Bearer …`, llaves privadas) y se reemplazan correos, teléfonos y tarjetas por marcadores. Ojo: el agente sí puede leer los archivos del repo, como tu `.env`.
 - **agy sin interfaz**: corre en `--mode accept-edits` (escritura) y `--mode plan` (lectura), sin saltarse permisos. Sin interfaz no puede pedir permisos, así que en `~/.gemini/antigravity-cli/settings.json` solo tiene permitidos comandos de lectura (`ls`, `tree`, `pwd`, `cat`, `head`, `tail`, `wc`, `grep` y `git status/log/diff/show/ls-files`). Además, `rm`, `sudo` y los comandos de git que reescriben historial están negados explícitamente. Todo lo demás se rechaza (también probé que `cat > archivo` y `touch` se rechazan). Edita con sus herramientas de archivos y ai-delegate corre los checks por él.
@@ -71,5 +71,61 @@ Puedes elegir otro puerto con `--port 8766` o evitar abrir el navegador con `--n
 En los hooks de Claude Code (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
 `Notification`, `Stop`, `SubagentStop` y `SessionEnd`), configura el comando
 `ai-delegate claude-status --from-hook`. Lee el JSON del hook por stdin y guarda
-únicamente estado, nombre de herramienta y fecha, siempre en silencio.
+estado, nombre de herramienta, fecha y la lista mínima de subagentes, siempre en silencio.
 También puedes usar `ai-delegate claude-status waiting` manualmente.
+
+## Agregar una IA
+
+Cada entrada de `agents` registra un destino disponible para `--to` y `[routing]`.
+Los tipos `codex` y `agy` usan sus protocolos existentes; `generic` ejecuta un CLI
+que responde texto plano, sin JSON. Por ejemplo:
+
+```toml
+fallback_order = ["codex", "agy", "opencode"]
+
+[agents.opencode]
+type = "generic"
+display = "OpenCode"
+color = "#f0a500"
+bin = "opencode"
+args = ["run", "{prompt}"]
+look = { hair = "#2e5d4b", color = "#f0a500" }
+quota = "none"
+```
+
+`args` sustituye `{prompt}` y `{cwd}` sin pasar por un shell. Usa
+`ai-delegate --to opencode "tarea"`. Los runners genéricos reciben la tarea
+original junto con el feedback y las correcciones de checks porque no reanudan
+conversaciones. `[main]` configura el nombre, display y color de la sesión principal.
+
+## Cuota y subagentes
+
+La taza de cuota usa datos reales de Codex: el último rollout en
+`agents.codex.home/.codex/sessions/` (o tu HOME), dentro de los últimos siete días.
+Expone las ventanas de 5 horas y 7 días, con su fecha de reinicio; se cachea 30 segundos.
+Para agy, `quota = "budget"` estima el consumo con los tokens de las corridas de hoy
+respecto a `daily_token_budget`. El presupuesto por defecto es 0 (desconocido):
+se muestra el consumo en tokens sin inventar un porcentaje. `quota = "none"`
+no aporta datos. Una corrida reciente en `cuota-agotada` fuerza 0 durante 30 minutos.
+
+Cualquier script, por ejemplo un statusline de Claude, puede escribir
+`claude-quota.json` en `data_dir()` (`AI_DELEGATE_HOME` o
+`~/.local/share/ai-delegate`) con este formato:
+
+```json
+{"windows": [{"label": "5 h", "used_pct": 35, "resets_at": null}]}
+```
+
+Esta fuente se identifica como `archivo`; sin archivo la cuota de Claude es desconocida.
+`resets_at` admite una fecha ISO o `null`.
+
+Los hooks de Claude siguen `Task`/`Agent` con id, etiqueta y fecha, sin guardar
+`description` ni `prompt`; expiran a los 30 minutos y se limitan a ocho entradas.
+Los streams de Codex y agy publican sus subagentes activos durante la ronda y los
+limpian al terminar. `/api/state` devuelve el main primero y todos los agentes como
+lista, con cuota y subagentes; también incluye los últimos 40 eventos de entrega.
+`/api/run/<id>` incluye los eventos y subagentes de la corrida.
+
+Si un feedback, escalamiento o corrección automática deja el diff igual, la corrida
+queda en `sin-cambios`, conserva el worktree y permite revisar, dar feedback, escalar
+o descartar. Un resumen ilegible añade un aviso para revisar el diff antes de confiar.

@@ -18,6 +18,7 @@ MODE_FLAGS = {
 
 class AgyRunner(Runner):
     name = "agy"
+    supports_resume = True
     prompt_hint = (
         "En la terminal solo tienes permitidos comandos de lectura: ls, tree, pwd, cat, head, "
         "tail, wc, grep y git status/log/diff/show/ls-files (sin pipes ni redirecciones); "
@@ -41,6 +42,11 @@ class AgyRunner(Runner):
             result.thread_id = event.get("conversation_id") or result.thread_id
         elif kind == "step_update":
             step = event.get("step_update") or {}
+            if step.get("step_type") == "tool" and "subagent" in str(step.get("tool_name", "")).lower():
+                identity = step.get("step_index", event.get("step_index"))
+                result.subagents = [s for s in result.subagents if s["id"] != identity]
+                if step.get("state") == "ACTIVE":
+                    result.subagents.append({"id": identity, "label": str(step["tool_name"])[:24]})
             if step.get("step_type") == "agent_response" and step.get("text_delta"):
                 deltas.append(step["text_delta"])
         elif kind == "result":
