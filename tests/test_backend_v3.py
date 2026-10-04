@@ -15,6 +15,9 @@ from aidelegate.install import END, START, FILES
 from aidelegate.runners.claude import ClaudeRunner
 from aidelegate.ui_state import build_state
 
+_AGY = json.loads((Path(__file__).parent.parent / "setup/agy-permissions.json").read_text())["permissions"]
+AGY_RULES = sum(len(v) for v in _AGY.values())
+
 
 @pytest.fixture
 def installed(tmp_path, monkeypatch):
@@ -262,7 +265,7 @@ def test_setup_change_summaries(installed, capsys, dry):
     assert f"crear {config.config_path()}: claves de config cambiadas: main, user_name" in output
     assert "bloque de instrucciones nuevo" in output
     assert "7 hooks nuevos (0 ya estaban)" in output
-    assert "20 permisos nuevos (0 ya estaban)" in output
+    assert f"{AGY_RULES} permisos nuevos (0 ya estaban)" in output
     if dry:
         assert main(["setup", "--yes"]) == 0
         capsys.readouterr()
@@ -272,7 +275,7 @@ def test_setup_change_summaries(installed, capsys, dry):
     assert "claves de config cambiadas: ninguna" in output
     assert "bloque de instrucciones actualizado" in output
     assert "0 hooks nuevos (7 ya estaban)" in output
-    assert "0 permisos nuevos (20 ya estaban)" in output
+    assert f"0 permisos nuevos ({AGY_RULES} ya estaban)" in output
 
 
 def test_setup_migration_summary(installed, capsys):

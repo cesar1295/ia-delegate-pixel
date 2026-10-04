@@ -66,6 +66,35 @@ def _drive(session: Session, text: str, label: str) -> AgentResult:
     return result
 
 
+DENIED_PREFIX = "agy no respondió: le negaron permisos"
+MAX_PERMISSION_RETRIES = 2
+PERMISSION_NUDGE = (
+    "Ese comando o lectura no está permitido en este modo y se canceló. No ejecutes comandos de terminal salvo "
+    "los de lectura permitidos y no leas fuera del directorio de trabajo; usa view_file, list_dir, grep_search y "
+    "edición de archivos, y continúa la tarea donde ibas."
+)
+
+
+def _run_with_permission_retries(session: Session, text: str, progress) -> AgentResult:
+    """Sin interfaz, un permiso negado termina el turno de agy en blanco: se retoma la conversación."""
+    meta = session.meta
+    result = session.runner.run(text, meta.mode, Path(meta.workdir), meta.thread_id,
+                                session.timeout_s, session.run_dir, on_progress=progress)
+    for _ in range(MAX_PERMISSION_RETRIES):
+        if not (result.error.startswith(DENIED_PREFIX) and result.thread_id):
+            break
+        meta.history.append({
+            "label": "reintento permisos", "agent": meta.agent, "exit_code": result.exit_code,
+            "seconds": round(result.duration_s, 1), "usage": result.usage, "error": result.error,
+        })
+        runs.append_prompt(session.run_dir, PERMISSION_NUDGE, f"reintento permisos → {meta.agent}")
+        elapsed = result.duration_s
+        result = session.runner.run(PERMISSION_NUDGE, meta.mode, Path(meta.workdir), result.thread_id,
+                                    session.timeout_s, session.run_dir, on_progress=progress)
+        result.duration_s += elapsed
+    return result
+
+
 def agent_round(session: Session, text: str, label: str) -> AgentResult:
     meta, run_dir = session.meta, session.run_dir
     before = diff_hash(meta) if label != "tarea" else None
@@ -80,8 +109,7 @@ def agent_round(session: Session, text: str, label: str) -> AgentResult:
         runs.save(meta, run_dir)
 
     try:
-        result = session.runner.run(text, meta.mode, Path(meta.workdir), meta.thread_id,
-                                   session.timeout_s, run_dir, on_progress=progress)
+        result = _run_with_permission_retries(session, text, progress)
     finally:
         meta.subagents = []
         runs.save(meta, run_dir)

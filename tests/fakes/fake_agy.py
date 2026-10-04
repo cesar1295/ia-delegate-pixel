@@ -11,6 +11,10 @@ def emit(event):
 
 
 emit({"event": "init", "conversation_id": "agy-conv-1", "init": {"cwd": str(Path.cwd())}})
+if "NIEGA_PRIMERO" in sys.argv[-1] and "--conversation" not in sys.argv:
+    emit({"event": "result", "result": {"status": "SUCCESS", "response": "",
+                                        "denied_actions": [{"action": "command", "display_name": "RunCommand"}]}})
+    sys.exit(0)
 if "accept-edits" in sys.argv:
     Path("hecho.txt").write_text("hecho por agy\n")
 emit({"event": "step_update", "step_update": {"step_type": "agent_response", "text_delta": "lis"}})
