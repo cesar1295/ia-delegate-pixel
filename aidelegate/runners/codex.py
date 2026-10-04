@@ -16,7 +16,10 @@ class CodexRunner(Runner):
     supports_resume = True
 
     def argv(self, prompt: str, mode: str, cwd: Path, resume_id: str | None) -> list[str]:
-        common = ["--json", "--skip-git-repo-check", "-c", f'sandbox_mode="{SANDBOX[mode]}"']
+        effective_mode = "read" if (mode == "read" or not getattr(self, "edit", True)) else "write"
+        common = ["--json", "--skip-git-repo-check", "-c", f'sandbox_mode="{SANDBOX[effective_mode]}"']
+        if getattr(self, "network", False):
+            common += ["-c", "sandbox_workspace_write.network_access=true"]
         if self.model:
             common += ["-m", self.model]
         if resume_id:

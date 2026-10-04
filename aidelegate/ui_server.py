@@ -90,6 +90,10 @@ def _validate_change_value(k: str, v: Any, cfg: dict[str, Any]) -> str | None:
         kind = k.removeprefix("routing.")
         if not (v in agents or v in ("main", "claude")):
             return f"routing.{kind} debe ser un agente configurado o 'main'"
+        if v in agents and routing.default_mode(kind, cfg) == "write":
+            agent_perms = agents[v].get("permissions", {})
+            if agent_perms.get("edit", True) is False:
+                return f"No se puede asignar '{v}' a '{kind}' porque no tiene permiso de edición"
     elif k.startswith("agents."):
         parts = k.split(".")
         if len(parts) != 3:
@@ -164,11 +168,17 @@ class Handler(BaseHTTPRequestHandler):
                     k: {"path": v.path, "version": v.version, "logged_in": v.logged_in, "note": v.note}
                     for k, v in detected.items()
                 }
+                from . import permissions
+                for name, ag in cfg.get("agents", {}).items():
+                    ag["permissions"] = permissions.get_effective_permissions(ag, name)
                 self._json({
                     "config": cfg,
                     "detected": det_data,
                     "kinds": routing.kinds(cfg),
                     "path": str(config.config_path()),
+                    "catalog": permissions.AGY_CATALOG,
+                    "agy_catalog": permissions.AGY_CATALOG,
+                    "always_denied": permissions.ALWAYS_DENIED,
                 })
             elif path.startswith("/api/run/"):
                 self._json(run_detail(path.removeprefix("/api/run/")))
@@ -244,6 +254,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/config":
                 self._post_config(body)
+            elif path == "/api/permissions":
+                self._post_permissions(body)
             elif path == "/api/master":
                 self._post_master(body)
             elif path == "/api/doctor":
@@ -254,6 +266,76 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, 400)
         except Exception as exc:
             self._json({"error": f"Error procesando petición: {exc}"}, 500)
+
+    def _post_permissions(self, body: dict) -> None:
+        if not isinstance(body, dict):
+            self._json({"error": "Cuerpo debe ser objeto JSON"}, 400)
+            return
+
+        agent = body.get("agent")
+        if not agent or not isinstance(agent, str):
+            self._json({"error": "Falta el campo 'agent'"}, 400)
+            return
+
+        cfg = config.load()
+        if agent not in cfg.get("agents", {}):
+            self._json({"error": f"Agente desconocido: {agent}"}, 400)
+            return
+
+        agent_cfg = cfg["agents"][agent]
+        agent_type = agent_cfg.get("type", agent)
+
+        if "changes" not in body or not isinstance(body["changes"], dict):
+            self._json({"error": "Falta el campo 'changes' con las modificaciones"}, 400)
+            return
+
+        changes = body["changes"]
+
+        from . import permissions
+        allowed_keys = permissions.ALLOWED_CHANGE_KEYS.get(agent_type, set())
+        invalid_keys = [k for k in changes if k not in allowed_keys]
+        if invalid_keys or (agent_type == "generic" and changes):
+            self._json({"error": f"Claves no permitidas para {agent} ({agent_type}): {invalid_keys}", "invalid": invalid_keys}, 400)
+            return
+
+        if "edit" in changes and not isinstance(changes["edit"], bool):
+            self._json({"error": "edit debe ser booleano"}, 400)
+            return
+
+        if "network" in changes and not isinstance(changes["network"], bool):
+            self._json({"error": "network debe ser booleano"}, 400)
+            return
+
+        if "groups" in changes:
+            groups_val = changes["groups"]
+            if not isinstance(groups_val, list) or not all(isinstance(g, str) for g in groups_val):
+                self._json({"error": "groups debe ser una lista de strings"}, 400)
+                return
+            unknown_groups = [g for g in groups_val if g not in permissions.AGY_CATALOG]
+            if unknown_groups:
+                self._json({"error": f"Grupos desconocidos: {unknown_groups}", "unknown_groups": unknown_groups}, 400)
+                return
+
+        # Comprobar si amplía permisos y requiere confirmación
+        current_perms = permissions.get_effective_permissions(agent_cfg, agent)
+        display = agent_cfg.get("display", agent)
+        confirm = bool(body.get("confirm", False))
+        messages = permissions.check_expansion(agent_type, display, current_perms, changes)
+        if messages and not confirm:
+            self._json({"needs_confirm": True, "message": "\n\n".join(messages)}, 409)
+            return
+
+        # Guardar en config.toml con respaldo
+        updates = {f"agents.{agent}.permissions.{k}": v for k, v in changes.items()}
+        new_cfg = config.write_config_updates(updates) if updates else cfg
+
+        # Si es agy, sincronizar settings.json con respaldo
+        effective = permissions.get_effective_permissions(new_cfg["agents"][agent], agent)
+        if agent_type == "agy":
+            settings_home = Path(agent_cfg["home"]) if agent_cfg.get("home") else None
+            permissions.sync_agy_settings(effective.get("groups", ["lectura"]), home=settings_home)
+
+        self._json({"ok": True, "agent": agent, "permissions": effective})
 
     def _post_config(self, body: dict) -> None:
         if not isinstance(body, dict) or "changes" not in body or not isinstance(body["changes"], dict):
