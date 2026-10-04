@@ -13,7 +13,10 @@
       "command(git log)",
       "command(git diff)",
       "command(git show)",
-      "command(git ls-files)"
+      "command(git ls-files)",
+      "command(git grep)",
+      "command(git blame)",
+      "command(git rev-parse)"
     ],
     "deny": [
       "command(rm)",

@@ -21,7 +21,7 @@ class AgyRunner(Runner):
     supports_resume = True
     prompt_hint = (
         "En la terminal solo tienes permitidos comandos de lectura: ls, tree, pwd, cat, head, "
-        "tail, wc, grep y git status/log/diff/show/ls-files (sin pipes ni redirecciones); "
+        "tail, wc, grep y git status/log/diff/show/ls-files/grep/blame/rev-parse (sin pipes ni redirecciones); "
         "cualquier otro se niega. Prefiere tus herramientas de archivos: view_file, list_dir, "
         "grep_search y edición de archivos. No lances subagentes: lee tú mismo y responde en "
         "este mismo turno. Los tests los corre la herramienta que te llamó y te devolverá los "
