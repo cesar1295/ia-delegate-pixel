@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "command(ls)",
+      "command(tree)",
+      "command(pwd)",
+      "command(cat)",
+      "command(head)",
+      "command(tail)",
+      "command(wc)",
+      "command(grep)",
+      "command(git status)",
+      "command(git log)",
+      "command(git diff)",
+      "command(git show)",
+      "command(git ls-files)"
+    ],
+    "deny": [
+      "command(rm)",
+      "command(sudo)",
+      "command(git push)",
+      "command(git commit)",
+      "command(git reset)",
+      "command(git checkout)",
+      "command(git clean)"
+    ]
+  }
+}
