@@ -65,11 +65,11 @@ DEFAULTS: dict[str, Any] = {
     },
     # home vacío = tu HOME normal (perfil ya autenticado)
     "agents": {
-        "claude": {"type": "claude", "bin": "auto", "display": "Claude", "color": "#d97757", "quota": "none", "role_text": "funcionalidades, especificaciones y revisiones; diseño visual"},
+        "claude": {"type": "claude", "bin": "auto", "display": "Claude", "color": "#d97757", "quota": "none", "role_text": "funcionalidades, especificaciones y revisiones; diseño visual", "permissions": {"edit": True}},
         "codex": {"bin": "codex", "home": "", "model": "", "type": "codex",
-                  "display": "Codex", "color": "#3ddc97", "quota": "codex", "role_text": "funcionalidades, bugs, refactors, endpoints, implementar especificaciones de diseño, revisiones de código"},
+                  "display": "Codex", "color": "#3ddc97", "quota": "codex", "role_text": "funcionalidades, bugs, refactors, endpoints, implementar especificaciones de diseño, revisiones de código", "permissions": {"edit": True, "network": False}},
         "agy": {"bin": "agy", "home": "", "model": "", "type": "agy",
-                "display": "agy", "color": "#7b8cff", "quota": "budget", "daily_token_budget": 0, "role_text": "tareas acotadas (tests sencillos, docs, datos de prueba, i18n), resumir repos, investigación web e imágenes; en la terminal solo tiene comandos de lectura"},
+                "display": "agy", "color": "#7b8cff", "quota": "budget", "daily_token_budget": 0, "role_text": "tareas acotadas (tests sencillos, docs, datos de prueba, i18n), resumir repos, investigación web e imágenes; en la terminal solo tiene comandos de lectura", "permissions": {"edit": True, "groups": ["lectura"]}},
     },
     # "/ruta/al/repo" = { check = "npm run lint && npm test" }
     "main": "claude",
@@ -113,6 +113,10 @@ def load(path: Path | None = None) -> dict[str, Any]:
         first = cfg.get("strategy", {}).get("first", "agy")
         then = cfg.get("strategy", {}).get("then", "codex")
         cfg["chain"] = [first, then, cfg["main"]]
+        for name, ag in cfg.get("agents", {}).items():
+            if isinstance(ag, dict):
+                from .permissions import get_effective_permissions
+                ag["permissions"] = get_effective_permissions(ag, name)
         return cfg
     try:
         user = tomllib.loads(path.read_text())
@@ -124,6 +128,10 @@ def load(path: Path | None = None) -> dict[str, Any]:
         first = cfg.get("strategy", {}).get("first", "agy")
         then = cfg.get("strategy", {}).get("then", "codex")
         cfg["chain"] = [first, then, cfg["main"]]
+    for name, ag in cfg.get("agents", {}).items():
+        if isinstance(ag, dict):
+            from .permissions import get_effective_permissions
+            ag["permissions"] = get_effective_permissions(ag, name)
     return cfg
 
 

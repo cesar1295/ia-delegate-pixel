@@ -52,6 +52,10 @@ class Runner:
 
     def __init__(self, binary: str, home: str = "", model: str = "") -> None:
         self.binary, self.home, self.model = binary, home, model
+        self.edit: bool = True
+        self.network: bool = False
+        self.groups: list[str] = ["lectura"]
+        self.permissions: dict[str, Any] = {}
 
     # --- a implementar por cada CLI ---
     def argv(self, prompt: str, mode: str, cwd: Path, resume_id: str | None) -> list[str]:

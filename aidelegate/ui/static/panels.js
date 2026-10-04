@@ -47,7 +47,11 @@
         limits: {max_fix_rounds: 3, max_review_rounds: 2, timeout_min: 30, keep_days: 7},
         routing: {feature: 'codex', bugfix: 'codex', test: 'agy', docs: 'agy', security: 'main'},
         agents: Object.fromEntries(this.api.agents().map(a => [a.name,
-          {display: a.display, color: a.color, enabled: true, model: '', daily_token_budget: 0}]))};
+          {display: a.display, color: a.color, enabled: true, model: '', daily_token_budget: 0,
+           type: a.type || a.name,
+           permissions: a.name === 'codex' ? {edit: true, network: false}
+             : a.name === 'agy' ? {edit: true, groups: ['lectura']}
+             : {edit: true}}]))};
     }
     async load() {
       if (this.loading || (this.config && Object.keys(this.changes).length)) return;
@@ -71,6 +75,12 @@
         }
         this.config = data.config;
         this.kinds = data.kinds || Object.keys(this.config.routing || {});
+        this.catalog = data.catalog || data.agy_catalog || {
+          lectura: ["ls", "tree", "pwd", "cat", "head", "tail", "wc", "grep", "git status", "git log", "git diff", "git show", "git ls-files", "git grep", "git blame", "git rev-parse"],
+          pruebas: ["npm test", "npm run test", "npm run lint", "npm run typecheck", "pnpm test", "pnpm run lint", "yarn test", "yarn lint", "pytest", "python3 -m pytest", "python -m pytest"],
+          instalacion: ["npm install", "npm ci", "pnpm install", "yarn install", "pip install", "python3 -m pip install"]
+        };
+        this.alwaysDenied = data.always_denied || ["rm", "sudo", "git push", "git commit", "git reset", "git checkout", "git clean"];
         this.detected = data.detected || data.detections || [];
         if (!Array.isArray(this.detected)) {
           this.detected = Object.entries(this.detected).map(([name, info]) => ({name, ...info}));
@@ -222,6 +232,7 @@
         this.field(card, 'Modelo', `agents.${name}.model`, 'text', {placeholder: 'Predeterminado'});
         if (name === 'agy') this.field(card, 'Presupuesto diario de tokens',
           `agents.${name}.daily_token_budget`, 'number', {min: 0, default: 0});
+        this.renderPermissions(card, name, agent);
       }
       const kinds = this.section('Tipos de tarea'), table = node('table'), body = node('tbody');
       const head = node('thead'), row = node('tr');
@@ -319,6 +330,209 @@
       } catch (error) {
         this.status.className = 'settings-status error';
         this.status.textContent = error.message;
+        button.disabled = false;
+      }
+    }
+    renderPermissions(card, name, agent) {
+      const {node} = this.api;
+      const agentType = agent.type || name;
+
+      const permHeader = node('div', 'permissions-header', 'PERMISOS');
+      card.append(permHeader);
+
+      if (agentType === 'generic') {
+        const genericText = node('p', 'permissions-generic-text', 'Lo define su propia CLI.');
+        const deniedLine = node('p', 'permissions-denied',
+          '🔒 Siempre bloqueados: rm, sudo, git push, git commit, git reset, git checkout, git clean');
+        card.append(genericText, deniedLine);
+        return;
+      }
+
+      const perms = {
+        edit: agent.permissions?.edit ?? true,
+        network: agent.permissions?.network ?? false,
+        groups: [...(agent.permissions?.groups || ['lectura'])],
+      };
+
+      const editField = node('div', 'setting-field');
+      const editLabel = node('label', '', 'PUEDE EDITAR ARCHIVOS');
+      const editInput = document.createElement('input');
+      editInput.type = 'checkbox';
+      editInput.className = 'setting-switch';
+      editInput.checked = perms.edit !== false;
+      const editHelp = node('p', 'permissions-help',
+        editInput.checked ? 'Edita solo dentro de su carpeta de trabajo (worktree).'
+                          : 'Solo lectura: no recibirá tareas de programación.');
+      editInput.addEventListener('change', () => {
+        perms.edit = editInput.checked;
+        editHelp.textContent = editInput.checked
+          ? 'Edita solo dentro de su carpeta de trabajo (worktree).'
+          : 'Solo lectura: no recibirá tareas de programación.';
+      });
+      editField.append(editLabel, editInput, editHelp);
+      card.append(editField);
+
+      if (agentType === 'codex') {
+        const netField = node('div', 'setting-field');
+        const netLabel = node('label', '', 'INTERNET EN SU SANDBOX');
+        const netInput = document.createElement('input');
+        netInput.type = 'checkbox';
+        netInput.className = 'setting-switch';
+        netInput.checked = Boolean(perms.network);
+        const netHelp = node('p', 'permissions-help', 'Apagado: no puede descargar nada.');
+        netInput.addEventListener('change', () => {
+          perms.network = netInput.checked;
+        });
+        netField.append(netLabel, netInput, netHelp);
+        card.append(netField);
+      }
+
+      if (agentType === 'agy') {
+        const groupsWrapper = node('div', 'permissions-groups');
+        const catalog = this.catalog || {
+          lectura: ["ls", "tree", "pwd", "cat", "head", "tail", "wc", "grep", "git status", "git log", "git diff", "git show", "git ls-files", "git grep", "git blame", "git rev-parse"],
+          pruebas: ["npm test", "npm run test", "npm run lint", "npm run typecheck", "pnpm test", "pnpm run lint", "yarn test", "yarn lint", "pytest", "python3 -m pytest", "python -m pytest"],
+          instalacion: ["npm install", "npm ci", "pnpm install", "yarn install", "pip install", "python3 -m pip install"]
+        };
+
+        const groupDefs = [
+          {id: 'lectura', label: 'Lectura', disabled: true, warn: false},
+          {id: 'pruebas', label: 'Pruebas', disabled: false, warn: false},
+          {id: 'instalacion', label: 'Instalación', disabled: false, warn: true}
+        ];
+
+        for (const g of groupDefs) {
+          const item = node('div', 'permissions-group-item');
+          const header = node('label', 'permissions-checkbox-label');
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.className = 'perm-checkbox';
+          if (g.disabled) {
+            cb.checked = true;
+            cb.disabled = true;
+          } else {
+            cb.checked = perms.groups.includes(g.id);
+            cb.addEventListener('change', () => {
+              if (cb.checked) {
+                if (!perms.groups.includes(g.id)) perms.groups.push(g.id);
+              } else {
+                perms.groups = perms.groups.filter(x => x !== g.id);
+              }
+            });
+          }
+          header.append(cb, node('span', 'permissions-group-name', g.label));
+          if (g.warn) {
+            header.append(node('span', 'perm-warn', '⚠ descarga código'));
+          }
+          const cmds = catalog[g.id] || [];
+          const cmdsStr = cmds.join(', ');
+          const list = node('span', 'perm-cmd-list', cmdsStr);
+          list.title = cmdsStr;
+          list.tabIndex = 0;
+          item.append(header, list);
+          groupsWrapper.append(item);
+        }
+        card.append(groupsWrapper);
+      }
+
+      const deniedLine = node('p', 'permissions-denied',
+        '🔒 Siempre bloqueados: rm, sudo, git push, git commit, git reset, git checkout, git clean');
+      card.append(deniedLine);
+
+      const footer = node('div', 'permissions-card-footer');
+      const saveBtn = this.button('GUARDAR PERMISOS', 'secondary');
+      const statusEl = node('span', 'permissions-status');
+      statusEl.setAttribute('role', 'status');
+      saveBtn.onclick = () => this.savePermissions(name, perms, saveBtn, statusEl);
+      footer.append(saveBtn, statusEl);
+      card.append(footer);
+    }
+    async savePermissions(agentName, perms, button, statusEl, confirmed = false) {
+      button.disabled = true;
+      statusEl.textContent = '';
+      statusEl.className = 'permissions-status';
+      try {
+        const agent = this.config.agents?.[agentName] || {};
+        const type = agent.type || agentName;
+        const changes = {};
+        if (type === 'codex') {
+          changes.edit = perms.edit ?? true;
+          changes.network = perms.network ?? false;
+        } else if (type === 'agy') {
+          changes.edit = perms.edit ?? true;
+          changes.groups = perms.groups ?? ['lectura'];
+        } else if (type === 'claude') {
+          changes.edit = perms.edit ?? true;
+        }
+
+        if (this.api.demo) {
+          const current = (this.demoConfig || this.config)?.agents?.[agentName]?.permissions || {};
+          let needsConfirm = false;
+          let confirmMsg = '';
+          const display = agent.display || agentName;
+          if (changes.edit === true && current.edit === false) {
+            needsConfirm = true;
+            confirmMsg = `${display} podrá editar archivos en su carpeta de trabajo.`;
+          } else if (type === 'codex' && changes.network === true && current.network !== true) {
+            needsConfirm = true;
+            confirmMsg = 'Codex tendrá acceso a internet dentro de su sandbox (por ejemplo para instalar dependencias).';
+          } else if (type === 'agy' && changes.groups?.includes('pruebas') && !current.groups?.includes('pruebas')) {
+            needsConfirm = true;
+            const catalog = this.catalog || {};
+            confirmMsg = `agy podrá ejecutar: ${(catalog.pruebas || []).join(', ')}.`;
+          } else if (type === 'agy' && changes.groups?.includes('instalacion') && !current.groups?.includes('instalacion')) {
+            needsConfirm = true;
+            const catalog = this.catalog || {};
+            confirmMsg = `agy podrá instalar dependencias con: ${(catalog.instalacion || []).join(', ')}. Esto descarga código de internet.`;
+          }
+          if (needsConfirm && !confirmed) {
+            if (window.confirm(confirmMsg)) {
+              return this.savePermissions(agentName, perms, button, statusEl, true);
+            }
+            button.disabled = false;
+            return;
+          }
+          await new Promise(r => setTimeout(r, 400));
+          this.demoConfig = structuredClone(this.demoConfig || this.config);
+          if (!this.demoConfig.agents[agentName]) this.demoConfig.agents[agentName] = {};
+          this.demoConfig.agents[agentName].permissions = changes;
+          statusEl.className = 'permissions-status success';
+          statusEl.textContent = 'GUARDADO ✓';
+          setTimeout(() => { if (statusEl.textContent === 'GUARDADO ✓') statusEl.textContent = ''; }, 2000);
+          return;
+        }
+
+        const token = document.querySelector('meta[name="ai-delegate-token"]')?.content || '';
+        const res = await fetch('/api/permissions', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'X-AI-Delegate-Token': token},
+          body: JSON.stringify({agent: agentName, changes, confirm: confirmed})
+        });
+
+        if (res.status === 409) {
+          const data = await res.json();
+          if (window.confirm(data.message)) {
+            return this.savePermissions(agentName, perms, button, statusEl, true);
+          }
+          button.disabled = false;
+          return;
+        }
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+
+        statusEl.className = 'permissions-status success';
+        statusEl.textContent = 'GUARDADO ✓';
+        if (this.config.agents?.[agentName]) {
+          this.config.agents[agentName].permissions = data.permissions;
+        }
+        setTimeout(() => { if (statusEl.textContent === 'GUARDADO ✓') statusEl.textContent = ''; }, 2000);
+      } catch (err) {
+        statusEl.className = 'permissions-status error';
+        statusEl.textContent = err.message;
+      } finally {
         button.disabled = false;
       }
     }

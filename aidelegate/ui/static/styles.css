@@ -740,6 +740,99 @@ button:disabled {
 .doctor-results {
   margin-top:8px;
 }
+/* TODO(diseño): estilos para subsección de permisos en Ajustes */
+.permissions-header {
+  font:400 9px var(--pixel);
+  color:var(--muted);
+  margin-top:12px;
+  margin-bottom:8px;
+  text-transform:uppercase;
+}
+.permissions-help {
+  font:11px var(--body);
+  color:var(--muted);
+  margin:4px 0 0;
+}
+.permissions-generic-text {
+  font:11px var(--body);
+  color:var(--muted);
+  margin:6px 0;
+}
+.permissions-groups {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin:8px 0;
+}
+.permissions-group-item {
+  display:flex;
+  flex-direction:column;
+}
+.permissions-checkbox-label {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  cursor:pointer;
+  font:13px var(--body);
+}
+.permissions-group-name {
+  color:var(--text);
+}
+.perm-checkbox {
+  appearance:none;
+  -webkit-appearance:none;
+  width:14px;
+  height:14px;
+  border:2px solid var(--line);
+  background:var(--bg);
+  cursor:pointer;
+  vertical-align:middle;
+  margin:0;
+  padding:0;
+  display:inline-block;
+  flex:none;
+}
+.perm-checkbox:checked {
+  background:var(--ok);
+  border-color:var(--ok);
+}
+.perm-checkbox:disabled {
+  opacity:.7;
+  cursor:default;
+}
+.perm-cmd-list {
+  font:11px var(--body);
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  display:block;
+  margin-top:2px;
+  cursor:default;
+}
+.perm-cmd-list:focus-visible {
+  outline:1px solid var(--review);
+}
+.perm-warn {
+  color:var(--warn);
+  font:11px var(--body);
+}
+.permissions-denied {
+  font:11px var(--body);
+  color:var(--muted);
+  margin:10px 0 8px;
+}
+.permissions-card-footer {
+  margin-top:8px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.permissions-status {
+  font:11px var(--body);
+  display:inline-block;
+  margin-left:8px;
+}
 @media(max-width:1099px) {
   main {
     display:block;

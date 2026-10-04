@@ -49,11 +49,22 @@ def pick_programmer(
     def is_available(name: str) -> bool:
         if name == master or name not in agents:
             return False
-        return agents[name].get("enabled", True) is not False
+        if agents[name].get("enabled", True) is False:
+            return False
+        if default_mode(kind, cfg) == "write":
+            perm = agents[name].get("permissions", {})
+            if perm.get("edit", True) is False:
+                return False
+        return True
 
-    # (a) first sea la maestra o no esté configurado (o deshabilitado)
+    # (a) first sea la maestra o no esté configurado (o deshabilitado o sin permisos de edición)
     if not is_available(first):
-        reason = f"{first} es la maestra" if first == master else f"{first} no disponible"
+        if first == master:
+            reason = f"{first} es la maestra"
+        elif default_mode(kind, cfg) == "write" and agents.get(first, {}).get("permissions", {}).get("edit", True) is False:
+            reason = f"{first} sin edición"
+        else:
+            reason = f"{first} no disponible"
         return then, reason
 
     # (b) su cuota conocida esté por debajo de quota_floor_pct
@@ -153,6 +164,10 @@ def resolve_target_with_reason(
         raise DelegateError(f"Destino desconocido: {target}. Usa un agente configurado o auto.")
     if cfg["agents"][target].get("enabled", True) is False:
         raise DelegateError(f"El agente '{target}' está desactivado.")
+    if default_mode(kind, cfg) == "write":
+        perm = cfg["agents"][target].get("permissions", {})
+        if perm.get("edit", True) is False:
+            raise DelegateError(f"El agente '{target}' no tiene permiso de edición para tareas de escritura.")
     return target, reason
 
 

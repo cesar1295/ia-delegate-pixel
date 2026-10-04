@@ -10,8 +10,9 @@ class ClaudeRunner(Runner):
     prompt_hint = "Trabaja sin pedir confirmaciones: no hay nadie para responderlas. No hagas commits."
 
     def argv(self, prompt: str, mode: str, cwd: Path, resume_id: str | None) -> list[str]:
+        perm_mode = "acceptEdits" if (mode == "write" and getattr(self, "edit", True)) else "plan"
         args = [self.binary, "-p", prompt, "--output-format", "stream-json", "--verbose",
-                "--permission-mode", "acceptEdits" if mode == "write" else "plan"]
+                "--permission-mode", perm_mode]
         if resume_id:
             args += ["--resume", resume_id]
         if self.model:

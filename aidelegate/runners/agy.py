@@ -16,20 +16,22 @@ MODE_FLAGS = {
 }
 
 
+class _PromptHintProperty:
+    def __get__(self, instance: Any, owner: Any = None) -> str:
+        from ..permissions import agy_prompt_hint
+        if instance is None:
+            return agy_prompt_hint(["lectura"])
+        return agy_prompt_hint(getattr(instance, "groups", ["lectura"]))
+
+
 class AgyRunner(Runner):
     name = "agy"
     supports_resume = True
-    prompt_hint = (
-        "En la terminal solo tienes permitidos comandos de lectura: ls, tree, pwd, cat, head, "
-        "tail, wc, grep y git status/log/diff/show/ls-files/grep/blame/rev-parse (sin pipes ni redirecciones); "
-        "cualquier otro se niega. Prefiere tus herramientas de archivos: view_file, list_dir, "
-        "grep_search y edición de archivos. No lances subagentes: lee tú mismo y responde en "
-        "este mismo turno. Los tests los corre la herramienta que te llamó y te devolverá los "
-        "errores si fallan."
-    )
+    prompt_hint = _PromptHintProperty()  # type: ignore[assignment]
 
     def argv(self, prompt: str, mode: str, cwd: Path, resume_id: str | None) -> list[str]:
-        argv = [self.binary, "--output-format", "stream-json", "--print-timeout", "0", *MODE_FLAGS[mode]]
+        effective_mode = "read" if (mode == "read" or not getattr(self, "edit", True)) else "write"
+        argv = [self.binary, "--output-format", "stream-json", "--print-timeout", "0", *MODE_FLAGS[effective_mode]]
         if self.model:
             argv += ["--model", self.model]
         if resume_id:

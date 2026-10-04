@@ -35,4 +35,10 @@ def get(name: str, cfg: dict[str, Any], model: str | None = None) -> Runner:
     runner.name = name
     if isinstance(runner, GenericRunner):
         runner.args = agent_cfg.get("args", [])
+    from ..permissions import get_effective_permissions
+    perms = get_effective_permissions(agent_cfg, kind)
+    runner.permissions = perms
+    runner.edit = perms.get("edit", True)
+    runner.network = perms.get("network", False)
+    runner.groups = perms.get("groups", ["lectura"])
     return runner

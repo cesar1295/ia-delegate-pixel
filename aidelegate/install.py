@@ -87,6 +87,8 @@ def update_config(writer: Writer, master: str, user: str, agents: dict) -> bool:
                 order.append(section)
             body = sections[section]
             for key, value in values.items():
+                if key == "permissions":
+                    continue
                 pattern = rf"(?m)^\s*{re.escape(key)}\s*=.*$"
                 line = f"{key} = {json.dumps(value, ensure_ascii=False)}"
                 body = re.sub(pattern, lambda m: line, body) if re.search(pattern, body) else body.rstrip() + "\n" + line + "\n"
@@ -97,17 +99,22 @@ def update_config(writer: Writer, master: str, user: str, agents: dict) -> bool:
         expected = tomllib.loads(original)
         expected["main"], expected["user_name"] = master, user
         for name, values in agents.items():
-            expected.setdefault("agents", {}).setdefault(name, {}).update(values)
+            expected.setdefault("agents", {}).setdefault(name, {}).update(
+                {k: v for k, v in values.items() if k != "permissions"}
+            )
         if parsed != expected:
             raise ValueError("no se conservan todas las claves")
     except (ValueError, tomllib.TOMLDecodeError):
         text = f'main = {json.dumps(master)}\nuser_name = {json.dumps(user, ensure_ascii=False)}\n'
         for name, values in agents.items():
-            text += f"\n[agents.{name}]\n" + "".join(f"{k} = {json.dumps(v, ensure_ascii=False)}\n" for k, v in values.items())
+            text += f"\n[agents.{name}]\n" + "".join(
+                f"{k} = {json.dumps(v, ensure_ascii=False)}\n"
+                for k, v in values.items() if k != "permissions"
+            )
         writer.write(path.with_name(path.name + ".nuevo"), text,
                      "config propuesta: " + ", ".join(
                          f"{section + '.' if section else ''}{key}"
-                         for section, values in updates.items() for key in values))
+                         for section, values in updates.items() for key in values if key != "permissions"))
         print(f"   ✗ No puedo conservar la config con seguridad; revisar {path}.nuevo")
         return False
     previous = tomllib.loads(original)
@@ -115,7 +122,7 @@ def update_config(writer: Writer, master: str, user: str, agents: dict) -> bool:
     for section, values in updates.items():
         old_values = previous if not section else previous.get("agents", {}).get(section.split(".", 1)[1], {})
         changed.extend(f"{section + '.' if section else ''}{key}" for key, value in values.items()
-                       if old_values.get(key) != value)
+                       if key != "permissions" and old_values.get(key) != value)
     summary = "claves de config cambiadas: " + (", ".join(changed) or "ninguna")
     writer.write(path, text, summary)
     return True
@@ -290,6 +297,7 @@ def setup(args, cfg: dict) -> int:
     agents = {}
     for name in installed:
         values = copy.deepcopy(cfg["agents"].get(name, config.DEFAULTS["agents"][name]))
+        values.pop("permissions", None)
         values.update(bin="auto" if name == "claude" else detected[name].path, role_text=values.get("role_text", ROLES[name]))
         agents[name] = values
     print("4. → Config")
@@ -429,13 +437,13 @@ def run_doctor(live: bool = False, cfg: dict | None = None, timeout_s: float = 1
         check("Hooks de Claude", ok, "ejecuta setup")
 
     if detected.get("agy") and detected["agy"].path:
-        try:
-            data = read_json(Path.home() / ".gemini/antigravity-cli/settings.json")
-            expected = json.loads((ROOT / "setup/agy-permissions.json").read_text())["permissions"]
-            ok = all(set(v) <= set(data.get("permissions", {}).get(k, [])) for k, v in expected.items())
-        except DelegateError:
-            ok = False
-        check("Permisos de agy", ok, "ejecuta setup")
+        from .permissions import check_agy_settings_sync, get_effective_permissions
+        agy_cfg = cfg.get("agents", {}).get("agy", {})
+        agy_perms = get_effective_permissions(agy_cfg, "agy")
+        agy_groups = agy_perms.get("groups", ["lectura"])
+        settings_path = (Path(agy_cfg.get("home")) if agy_cfg.get("home") else Path.home()) / ".gemini/antigravity-cli/settings.json"
+        ok = check_agy_settings_sync(agy_groups, settings_path)
+        check("Permisos de agy", ok, "guarda los permisos de agy en Ajustes")
 
     try:
         config.data_dir().mkdir(parents=True, exist_ok=True)
