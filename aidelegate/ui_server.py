@@ -75,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/state":
                 cfg = config.load()
                 self._json(build_state(runs.recent(1_000_000), _claude_status(), stats.read_rows(), datetime.now(),
-                                       max_fix_rounds=cfg["limits"]["max_fix_rounds"]))
+                                       max_fix_rounds=cfg["limits"]["max_fix_rounds"], cfg=cfg))
             elif path.startswith("/api/run/"):
                 self._json(run_detail(path.removeprefix("/api/run/")))
             elif path == "/":

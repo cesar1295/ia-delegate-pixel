@@ -46,10 +46,14 @@ DEFAULTS: dict[str, Any] = {
     },
     # home vacío = tu HOME normal (perfil ya autenticado)
     "agents": {
-        "codex": {"bin": "codex", "home": "", "model": ""},
-        "agy": {"bin": "agy", "home": "", "model": ""},
+        "codex": {"bin": "codex", "home": "", "model": "", "type": "codex",
+                  "display": "Codex", "color": "#3ddc97", "quota": "codex"},
+        "agy": {"bin": "agy", "home": "", "model": "", "type": "agy",
+                "display": "agy", "color": "#7b8cff", "quota": "budget", "daily_token_budget": 0},
     },
     # "/ruta/al/repo" = { check = "npm run lint && npm test" }
+    "main": {"name": "claude", "display": "Claude", "color": "#d97757"},
+    "fallback_order": ["codex", "agy"],
     "projects": {},
 }
 

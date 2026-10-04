@@ -15,4 +15,7 @@ if "accept-edits" in sys.argv:
     Path("hecho.txt").write_text("hecho por agy\n")
 emit({"event": "step_update", "step_update": {"step_type": "agent_response", "text_delta": "lis"}})
 emit({"event": "step_update", "step_update": {"step_type": "agent_response", "text_delta": "to"}})
+for state in ("ACTIVE", "DONE"):
+    emit({"event": "step_update", "step_update": {"step_type": "tool", "tool_name": "invoke_subagent",
+                                                    "step_index": 1, "state": state}})
 emit({"event": "result", "result": {"status": "SUCCESS", "response": "listo desde agy", "usage": {"total_tokens": 7}}})

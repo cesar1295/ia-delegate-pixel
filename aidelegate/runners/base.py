@@ -11,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Callable, TextIO
 
 from ..errors import DelegateError
 
@@ -36,6 +36,7 @@ class AgentResult:
     quota_exhausted: bool = False
     usage: dict[str, Any] = field(default_factory=dict)
     duration_s: float = 0.0
+    subagents: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -44,6 +45,8 @@ class AgentResult:
 
 class Runner:
     name = ""
+    supports_resume = False
+    plain_text = False
     # Regla extra para el prompt según las limitaciones del CLI.
     prompt_hint = ""
 
@@ -83,7 +86,8 @@ class Runner:
         self.profile_home()
 
     def run(
-        self, prompt: str, mode: str, cwd: Path, resume_id: str | None, timeout_s: int, run_dir: Path
+        self, prompt: str, mode: str, cwd: Path, resume_id: str | None, timeout_s: int, run_dir: Path,
+        on_progress: Callable[[AgentResult], None] | None = None
     ) -> AgentResult:
         result = AgentResult(thread_id=resume_id)
         start = time.monotonic()
@@ -96,7 +100,7 @@ class Runner:
             timer = threading.Timer(timeout_s, _kill, args=(proc, result))
             timer.start()
             try:
-                self._consume(proc.stdout, events, result)
+                self._consume(proc.stdout, events, result, on_progress)
                 result.exit_code = proc.wait()
             finally:
                 timer.cancel()
@@ -104,9 +108,17 @@ class Runner:
         self._finalize(result, run_dir / "stderr.log")
         return result
 
-    def _consume(self, stdout: TextIO | None, events: TextIO, result: AgentResult) -> None:
+    def _consume(self, stdout: TextIO | None, events: TextIO, result: AgentResult,
+                 on_progress: Callable[[AgentResult], None] | None = None) -> None:
         deltas: list[str] = []
+        notified: list[dict] = []
+        last_progress = float("-inf")
         for line in stdout or []:
+            if self.plain_text:
+                deltas.append(line)
+                events.write(json.dumps({"text": line.rstrip("\r\n")}, ensure_ascii=False) + "\n")
+                events.flush()
+                continue
             events.write(line)
             events.flush()
             try:
@@ -115,6 +127,10 @@ class Runner:
                 continue
             if isinstance(event, dict):
                 self.parse_event(event, result, deltas)
+                if on_progress and result.subagents != notified and time.monotonic() - last_progress >= 1:
+                    on_progress(result)
+                    notified = [dict(s) for s in result.subagents]
+                    last_progress = time.monotonic()
         if not result.last_message and deltas:
             result.last_message = "".join(deltas).strip()
 

@@ -7,7 +7,6 @@ from typing import Any, Callable, TypeVar
 from .errors import DelegateError, MainSessionTask
 
 MAIN = "main"
-AGENTS = ("codex", "agy")
 T = TypeVar("T")
 
 
@@ -33,16 +32,19 @@ def resolve_target(to: str, kind: str, cfg: dict[str, Any]) -> str:
             f"Las tareas de tipo '{kind}' las hace la sesión principal (Claude); no se delegan. "
             "Si de todos modos quieres delegarla, usa --to codex o --to agy."
         )
-    if target not in AGENTS:
-        raise DelegateError(f"Destino desconocido: {target}. Usa codex, agy o auto.")
+    if target not in cfg["agents"]:
+        raise DelegateError(f"Destino desconocido: {target}. Usa un agente configurado o auto.")
     return target
 
 
-def candidates(to: str, primary: str) -> list[str]:
-    """Con --to auto, si el primero agota su cuota se intenta el otro."""
+def candidates(to: str, primary: str, cfg: dict[str, Any] | None = None) -> list[str]:
+    """Con --to auto, intenta los agentes configurados en fallback_order."""
     if to != "auto":
         return [primary]
-    return [primary] + [a for a in AGENTS if a != primary]
+    from .config import DEFAULTS
+    cfg = cfg or DEFAULTS
+    return [primary] + [a for a in dict.fromkeys(cfg["fallback_order"])
+                        if a != primary and a in cfg["agents"]]
 
 
 def run_with_fallback(

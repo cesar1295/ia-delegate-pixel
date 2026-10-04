@@ -15,7 +15,7 @@ from . import config
 from .errors import DelegateError
 
 # Estados que todavía esperan una decisión: no se limpian aunque sean viejos.
-PENDING = {"running", "listo-para-revisar", "checks-fallidos", "escalado-a-main"}
+PENDING = {"running", "listo-para-revisar", "checks-fallidos", "escalado-a-main", "sin-cambios"}
 
 
 @dataclass
@@ -53,6 +53,8 @@ class RunMeta:
     fallback_from: str | None = None
     escalated_from: list[str] = field(default_factory=list)
     error: str | None = None
+    events: list[dict] = field(default_factory=list)
+    subagents: list[dict] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RunMeta":
@@ -83,6 +85,12 @@ def save(meta: RunMeta, run_dir: Path) -> None:
     tmp = run_dir / "meta.json.tmp"
     tmp.write_text(json.dumps(asdict(meta), indent=2, ensure_ascii=False))
     tmp.replace(run_dir / "meta.json")
+
+
+def add_event(meta: RunMeta, type: str, label: str = "") -> None:
+    meta.events.append({"type": type, "ts": datetime.now().isoformat(timespec="seconds"),
+                        "label": label, "agent": meta.agent})
+    save(meta, config.runs_dir() / meta.run_id)
 
 
 def load(run_dir: Path) -> RunMeta:

@@ -27,7 +27,9 @@ def test_state(server):
     with urlopen(server + "/api/state") as response:
         assert response.headers["Content-Type"] == "application/json; charset=utf-8"
         assert response.headers["Cache-Control"] == "no-store"
-        assert set(json.load(response)["agents"]) == {"claude", "codex", "agy"}
+        data = json.load(response)
+        assert [a["name"] for a in data["agents"]] == ["claude", "codex", "agy"]
+        assert data["events"] == []
 
 
 @pytest.mark.parametrize("path", ["/static/../cli.py", "/static/%2e%2e/cli.py", "/static//etc/passwd", "/api/run/no-existe"])
@@ -50,6 +52,7 @@ def test_run_detail(server):
     assert data["agent"] == meta.agent
     assert data["kind"] == meta.kind
     assert data["feedback"] == meta.feedback
+    assert data["events"] == [] and data["subagents"] == []
     assert "usage" not in data["history"][0]
     assert len(data["summary"].splitlines()) == 40
     assert len(data["commands"]) == 4

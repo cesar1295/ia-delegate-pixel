@@ -20,6 +20,8 @@ def print_run(meta: RunMeta, run_dir: Path, max_lines: int) -> None:
     print(f"thread: {meta.thread_id or '-'}")
     print(f"corrida: {meta.run_id}  ({short(run_dir)})")
     _print_workspace(meta)
+    if meta.status == "sin-cambios":
+        print("aviso: la ronda no cambió ningún archivo; revisa o escala")
     if meta.error:
         print(f"error: {meta.error}")
     _print_summary(run_dir, max_lines)
@@ -49,7 +51,7 @@ def _print_summary(run_dir: Path, max_lines: int) -> None:
 
 
 def _print_next(meta: RunMeta) -> None:
-    if not meta.worktree or meta.status not in ("listo-para-revisar", "checks-fallidos"):
+    if not meta.worktree or meta.status not in ("listo-para-revisar", "checks-fallidos", "sin-cambios"):
         return
     rid = meta.run_id
     print(f"siguiente: ai-delegate diff {rid} | feedback {rid} \"...\" | merge {rid} | discard {rid}")

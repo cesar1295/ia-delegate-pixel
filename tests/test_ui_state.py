@@ -33,8 +33,8 @@ def meta(**kwargs):
 ])
 def test_agent(agent, changes, state, detail):
     result = build_state([meta(agent=agent, **changes)], None, [], NOW)
-    assert result["agents"][agent]["state"] == state
-    assert result["agents"][agent]["detail"] == detail
+    assert next(a for a in result["agents"] if a["name"] == agent)["state"] == state
+    assert next(a for a in result["agents"] if a["name"] == agent)["detail"] == detail
     if changes.get("pid") == 999999999:
         assert result["runs"][0]["status"] == "interrumpido"
 
@@ -50,7 +50,7 @@ def test_agent(agent, changes, state, detail):
     ([], {"state": "idle", "ts": NOW.isoformat()}, "idle", ""),
 ])
 def test_claude(metas, activity, state, detail):
-    result = build_state(metas, activity, [], NOW)["agents"]["claude"]
+    result = build_state(metas, activity, [], NOW)["agents"][0]
     assert (result["state"], result["detail"]) == (state, detail)
 
 
@@ -61,7 +61,7 @@ def test_old_meta_and_no_mutation():
         data.pop(field)
     loaded = RunMeta.from_dict(data)
     assert loaded.updated_at == loaded.created_at
-    assert build_state([loaded], None, [], NOW)["agents"]["codex"]["state"] == "working"
+    assert build_state([loaded], None, [], NOW)["agents"][1]["state"] == "working"
     loaded.updated_at = (NOW - timedelta(minutes=31)).isoformat()
     result = build_state([loaded], None, [], NOW)
     assert result["runs"][0]["status"] == "interrumpido"
@@ -75,7 +75,7 @@ def test_priority_and_counts():
     ledger = [{"agent": "codex", "kind": "feature", "outcome": "integrado", "review_rounds": 0,
                "ts": NOW.isoformat()}]
     result = build_state([ready, working], {"state": "waiting", "ts": NOW.isoformat()}, ledger, NOW)
-    assert result["agents"]["codex"]["state"] == "checks"
-    assert result["agents"]["claude"]["state"] == "reviewing"
+    assert result["agents"][1]["state"] == "checks"
+    assert result["agents"][0]["state"] == "reviewing"
     assert result["counts"] == {"running": 1, "review": 1, "merged_today": 1}
     assert result["stats"][0]["primera_pct"] == 100

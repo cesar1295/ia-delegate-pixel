@@ -74,9 +74,10 @@ def _execute(args: argparse.Namespace, cfg: dict[str, Any], meta: RunMeta, run_d
     if use_worktree and root:
         _attach_worktree(meta, run_dir, root, source)
     spec = replace(spec, directory=Path(meta.workdir))
+    runs.add_event(meta, "assigned")
     session = _session(meta, run_dir, cfg, runner, args.timeout, args.max_fix_rounds)
     routing.run_with_fallback(
-        routing.candidates(args.to, meta.agent),
+        routing.candidates(args.to, meta.agent, cfg),
         lambda name: _attempt(session, cfg, args.model, name, spec),
         lambda res: res.quota_exhausted,
     )
@@ -92,6 +93,7 @@ def _attempt(session: loop.Session, cfg: dict[str, Any], model: str | None, name
         session.runner = runners.get(name, cfg, model)
         session.runner.ensure_available()
         meta.fallback_from, meta.agent, meta.thread_id = meta.agent, name, None
+        runs.add_event(meta, "assigned", meta.fallback_from)
     text = prompt.compose(replace(spec, agent_hint=session.runner.prompt_hint))
     return loop.drive(session, sanitize(text, source="el prompt"), "tarea")
 
@@ -194,6 +196,7 @@ def cmd_feedback(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     text = sanitize(" ".join(args.text), source="el feedback")
     meta.review_rounds += 1
     meta.feedback.append(text)
+    runs.add_event(meta, "feedback")
     return _continue(meta, run_dir, cfg, prompt.compose_feedback(text, meta.review_rounds), f"revisión {meta.review_rounds}")
 
 
@@ -201,11 +204,13 @@ def cmd_escalate(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     meta, run_dir = _load(args.run)
     _require_open(meta)
     previous, nxt = meta.agent, routing.next_in_chain(meta.agent, cfg)
+    runs.add_event(meta, "escalated", nxt)
     stats.record(meta, "escalado")
     meta.escalated_from.append(previous)
     if nxt == routing.MAIN:
         return _escalate_to_main(meta, run_dir)
     meta.agent, meta.thread_id, meta.review_rounds, meta.fix_rounds = nxt, None, 0, 0
+    runs.add_event(meta, "assigned", previous)
     design = _reload_design_spec(meta)
     text = prompt.compose_escalation(meta.task, previous, meta.feedback, meta.diffstat or "", design)
     return _continue(meta, run_dir, cfg, sanitize(text, source="el prompt de escalamiento"), "escalamiento")
@@ -221,7 +226,9 @@ def _reload_design_spec(meta: RunMeta) -> str | None:
 
 
 def _escalate_to_main(meta: RunMeta, run_dir: Path) -> int:
+    previous = meta.agent
     meta.agent, meta.status = routing.MAIN, "escalado-a-main"
+    runs.add_event(meta, "assigned", previous)
     runs.save(meta, run_dir)
     where = f"{report.short(meta.worktree)} (rama {meta.branch})" if meta.worktree else meta.workdir
     print(f"Te toca a ti (sesión principal). Trabaja en: {where}")
@@ -244,7 +251,7 @@ def cmd_merge(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     message = args.message or f"ai-delegate({meta.agent}): {meta.task.strip().splitlines()[0][:72]}"
     worktree.merge(Path(meta.project_root or ""), path, meta.branch or "", meta.base_branch or "", message)
     meta.status = "integrado"
-    runs.save(meta, run_dir)
+    runs.add_event(meta, "merged")
     stats.record(meta, "integrado")
     print(f"integrado en {meta.base_branch} ({report.short(meta.project_root or '')}); worktree eliminado")
     return 0
@@ -254,10 +261,10 @@ def cmd_discard(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     meta, run_dir = _load(args.run)
     if meta.worktree and meta.project_root:
         worktree.remove(Path(meta.project_root), Path(meta.worktree), meta.branch or "")
-    if meta.status in ("listo-para-revisar", "checks-fallidos", "escalado-a-main"):
+    if meta.status in ("listo-para-revisar", "checks-fallidos", "escalado-a-main", "sin-cambios"):
         stats.record(meta, "descartado")
     meta.status = "descartado"
-    runs.save(meta, run_dir)
+    runs.add_event(meta, "discarded")
     print(f"descartada {meta.run_id}")
     return 0
 

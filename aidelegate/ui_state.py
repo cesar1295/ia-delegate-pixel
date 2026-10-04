@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from . import config, stats
+from . import config, quota, stats
 from .runs import RunMeta
 
 
@@ -69,7 +69,7 @@ def _agent(metas: list[RunMeta], now: datetime, max_fix: int) -> dict:
             return character("quota", "sin cuota", latest)
         if status == "integrado" and elapsed < 120:
             return character("celebrate", "¡integrado!", latest)
-        if status in {"checks-fallidos", "error", "timeout", "bloqueado", "interrumpido"} and elapsed < 600:
+        if status in {"checks-fallidos", "error", "timeout", "bloqueado", "interrumpido", "sin-cambios"} and elapsed < 600:
             return character("failed", f"falló: {status}", latest)
     if not any(age(m.updated_at, now) < 900 for m in metas):
         return character("sleep")
@@ -94,8 +94,10 @@ def _claude(metas: list[RunMeta], claude: dict | None, now: datetime) -> dict:
 
 
 def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dict],
-                now: datetime, *, max_fix_rounds: int = config.DEFAULTS["limits"]["max_fix_rounds"]) -> dict:
-    """Construye el estado sin modificar las corridas ni leer archivos."""
+                now: datetime, *, max_fix_rounds: int = config.DEFAULTS["limits"]["max_fix_rounds"],
+                cfg: dict | None = None) -> dict:
+    """Construye el contrato v2 sin modificar las corridas."""
+    cfg = cfg or config.DEFAULTS
     ordered = sorted(metas, key=lambda m: m.created_at, reverse=True)
     fields = ("run_id", "agent", "kind", "mode", "repo", "status", "phase", "phase_label",
               "created_at", "updated_at", "duration_s", "fix_rounds", "review_rounds", "diffstat")
@@ -106,10 +108,23 @@ def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dic
             row["status"] = "interrumpido"
         row.update(task=first_line(meta.task, 80), checks_ok=meta.last_check.get("ok") if meta.last_check else None)
         rows.append(row)
-    return {"now": now.isoformat(timespec="seconds"), "agents": {
-        "claude": _claude(ordered, claude, now),
-        **{agent: _agent([m for m in ordered if m.agent == agent], now, max_fix_rounds)
-           for agent in ("codex", "agy")}}, "runs": rows[:30],
+    agents = []
+    for name, settings, role in [(cfg["main"]["name"], cfg["main"], "main"),
+                                  *((n, a, "agent") for n, a in cfg["agents"].items())]:
+        matching = [m for m in ordered if m.agent == name]
+        state = _claude(ordered, claude, now) if role == "main" else _agent(matching, now, max_fix_rounds)
+        color = settings.get("color", "#3a3a48")
+        active = next((m for m in matching if m.run_id == state["run_id"] and alive(m, now)), None)
+        subs = (claude or {}).get("subagents", []) if role == "main" else active.subagents if active else []
+        agents.append({"name": name, "display": settings.get("display", name), "color": color,
+                       "role": role, "look": None if role == "main" or name in {"codex", "agy"}
+                       else settings.get("look", {"hair": "#3a3a48", "color": color}),
+                       **state, "quota": quota.get(name, cfg, ordered, now),
+                       "subagents": [{"id": s["id"], "label": s["label"]} for s in subs
+                                     if role != "main" or age(s.get("ts"), now) < 1800]})
+    events = sorted(({**event, "id": f"{meta.run_id}:{i}", "run_id": meta.run_id}
+                     for meta in ordered for i, event in enumerate(meta.events)), key=lambda e: e["ts"])[-40:]
+    return {"now": now.isoformat(timespec="seconds"), "agents": agents, "events": events, "runs": rows[:30],
         "counts": {"running": sum(r["status"] == "running" for r in rows),
                    "review": sum(r["status"] == "listo-para-revisar" for r in rows),
                    "merged_today": sum(r.get("outcome") == "integrado" and
