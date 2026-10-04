@@ -19,7 +19,11 @@ SUCCESS = {"ok", "listo-para-revisar", "dry-run"}
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parse(sys.argv[1:] if argv is None else argv)
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "claude-status":
+        from .claude_status import main as status_main
+        return status_main(argv[1:])
+    args = parse(argv)
     try:
         cfg = config.load()
         return COMMANDS[args.command](args, cfg)
@@ -276,6 +280,12 @@ def cmd_list(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     return 0
 
 
+def cmd_ui(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    """Abre la oficina local."""
+    from .ui_server import serve
+    return serve(args.port, args.no_open)
+
+
 def cmd_stats(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     print(stats.table())
     return 0
@@ -331,6 +341,6 @@ def _require_open(meta: RunMeta) -> None:
 
 
 COMMANDS = {
-    "run": cmd_run, "diff": cmd_diff, "feedback": cmd_feedback, "escalate": cmd_escalate,
+    "ui": cmd_ui, "run": cmd_run, "diff": cmd_diff, "feedback": cmd_feedback, "escalate": cmd_escalate,
     "merge": cmd_merge, "discard": cmd_discard, "show": cmd_show, "list": cmd_list, "stats": cmd_stats,
 }

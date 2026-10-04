@@ -7,7 +7,7 @@ import re
 
 from .errors import DelegateError
 
-SUBCOMMANDS = ("run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats")
+SUBCOMMANDS = ("run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats", "ui", "claude-status")
 
 
 def parse(argv: list[str]) -> argparse.Namespace:
@@ -38,6 +38,13 @@ def _parser() -> argparse.ArgumentParser:
     _add_run_ref(sub, "show", "Muestra el estado y resumen de una corrida.")
     sub.add_parser("list", help="Corridas recientes.").add_argument("-n", type=int, default=15)
     sub.add_parser("stats", help="Tasa de aceptación por agente y tipo de tarea.")
+    ui = sub.add_parser("ui", help="Abre la oficina pixel local.")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--no-open", action="store_true")
+    status = sub.add_parser("claude-status", help="Actualiza silenciosamente el estado de Claude.")
+    status.add_argument("state", nargs="?", choices=("working", "waiting", "idle"))
+    status.add_argument("--detail")
+    status.add_argument("--from-hook", action="store_true")
     return parser
 
 

@@ -62,3 +62,14 @@ Otras opciones de `run`: `--task-file`, `--issue` (requiere `gh`), `--context-fi
 ```bash
 python3 -m pytest -q
 ```
+
+## Oficina pixel
+
+Ejecuta `ai-delegate ui` para abrir la oficina en `http://127.0.0.1:8765`.
+Puedes elegir otro puerto con `--port 8766` o evitar abrir el navegador con `--no-open`.
+
+En los hooks de Claude Code (`UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+`Notification`, `Stop`, `SubagentStop` y `SessionEnd`), configura el comando
+`ai-delegate claude-status --from-hook`. Lee el JSON del hook por stdin y guarda
+únicamente estado, nombre de herramienta y fecha, siempre en silencio.
+También puedes usar `ai-delegate claude-status waiting` manualmente.
