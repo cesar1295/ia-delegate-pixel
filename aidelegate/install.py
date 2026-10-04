@@ -230,6 +230,25 @@ def hooks(writer: Writer, enable: bool, yes: bool = True) -> None:
     writer.write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n", summary)
 
 
+def statusline_command() -> str:
+    return str(Path.home() / ".local/bin/ai-delegate") + " claude-statusline"
+
+
+def statusline(writer: Writer, yes: bool = True) -> None:
+    path = Path.home() / ".claude/settings.json"
+    if not path.exists() and not confirm(f"¿Crear {path}?", yes):
+        return
+    data = read_json(path)
+    if "statusLine" not in data or not data["statusLine"]:
+        template_file = ROOT / "setup/claude-statusline.json"
+        template = json.loads(template_file.read_text()) if template_file.exists() else {
+            "type": "command", "command": "ai-delegate claude-statusline", "refreshInterval": 60
+        }
+        template["command"] = statusline_command()
+        data["statusLine"] = template
+        writer.write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n", "statusLine de Claude configurado")
+
+
 def permissions(writer: Writer) -> None:
     path = Path.home() / ".gemini/antigravity-cli/settings.json"
     data = read_json(path)
@@ -309,6 +328,8 @@ def setup(args, cfg: dict) -> int:
     instructions(writer, cfg, args.yes, previous if previous != master else None)
     print("6. → Hooks" + (" de Claude" if master == "claude" else " no requeridos"))
     hooks(writer, master == "claude", args.yes)
+    if master == "claude":
+        statusline(writer, args.yes)
     print("7. → Permisos de agy" + ("" if "agy" in installed else " (no instalado)"))
     if "agy" in installed:
         permissions(writer)
@@ -343,6 +364,8 @@ def set_master(name: str, cfg: dict | None = None, yes: bool = True) -> None:
     new_cfg = {**cfg, "main": name}
     instructions(writer, new_cfg, yes, old if old != name else None)
     hooks(writer, name == "claude", yes)
+    if name == "claude":
+        statusline(writer, yes)
 
 
 def master(args, cfg: dict) -> int:
@@ -435,6 +458,21 @@ def run_doctor(live: bool = False, cfg: dict | None = None, timeout_s: float = 1
         except DelegateError:
             ok = False
         check("Hooks de Claude", ok, "ejecuta setup")
+
+        try:
+            data = read_json(Path.home() / ".claude/settings.json")
+            sl = data.get("statusLine")
+            if not sl:
+                check("Statusline de Claude", False, "ejecuta setup")
+            else:
+                cmd = sl.get("command", "") if isinstance(sl, dict) else str(sl)
+                if "claude-statusline" in cmd:
+                    check("Statusline de Claude", True, "")
+                else:
+                    check("Statusline de Claude", False,
+                          f"Tienes un statusLine propio; para ver la cuota de Claude, encadena: {cmd}; ai-delegate claude-statusline")
+        except DelegateError:
+            check("Statusline de Claude", False, "ejecuta setup")
 
     if detected.get("agy") and detected["agy"].path:
         from .permissions import check_agy_settings_sync, get_effective_permissions

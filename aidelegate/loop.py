@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
-from . import checks, config, escalation, prompt, report, routing, runners, runs, stats, summary, worktree
+from . import checks, config, escalation, prompt, report, routing, runners, runs, stats, summary, usage, worktree
 from .runners import AgentResult, Runner
 from .runs import RunMeta
 from .sanitize import sanitize
@@ -102,10 +102,12 @@ def _run_with_permission_retries(session: Session, text: str, progress) -> Agent
     for _ in range(MAX_PERMISSION_RETRIES):
         if not (result.error.startswith(DENIED_PREFIX) and result.thread_id):
             break
+        retry_ts = datetime.now().isoformat(timespec="seconds")
         meta.history.append({
             "label": "reintento permisos", "agent": meta.agent, "exit_code": result.exit_code,
-            "seconds": round(result.duration_s, 1), "usage": result.usage, "error": result.error,
+            "seconds": round(result.duration_s, 1), "ts": retry_ts, "usage": result.usage, "error": result.error,
         })
+        usage.record_work_round(meta.agent, result.duration_s, meta.kind, meta.repo, meta.run_id, ts=retry_ts)
         runs.append_prompt(session.run_dir, PERMISSION_NUDGE, f"reintento permisos → {meta.agent}")
         elapsed = result.duration_s
         result = session.runner.run(PERMISSION_NUDGE, meta.mode, Path(meta.workdir), result.thread_id,
@@ -140,11 +142,13 @@ def agent_round(session: Session, text: str, label: str) -> AgentResult:
     meta.error = result.error or None
     if summary.looks_garbled(result.last_message):
         meta.error = (meta.error + "; " if meta.error else "") + "resumen ilegible: revisa el diff antes de confiar"
+    ts = datetime.now().isoformat(timespec="seconds")
     meta.history.append({
         "label": label, "agent": meta.agent, "exit_code": result.exit_code,
-        "seconds": round(result.duration_s, 1), "ts": datetime.now().isoformat(timespec="seconds"),
+        "seconds": round(result.duration_s, 1), "ts": ts,
         "usage": result.usage, "error": result.error or None,
     })
+    usage.record_work_round(meta.agent, result.duration_s, meta.kind, meta.repo, meta.run_id, ts=ts)
     runs.write_text(run_dir, "last.md", result.last_message)
     runs.save(meta, run_dir)
     return result

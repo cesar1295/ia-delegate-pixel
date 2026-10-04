@@ -19,6 +19,31 @@
     if (text !== undefined) element.textContent = text;
     return element;
   };
+  function formatTime(s) {
+    if (s == null) return 'sin dato';
+    const sec = Math.round(Number(s));
+    if (sec >= 3600) {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      return `${h} h ${m} min`;
+    }
+    if (sec >= 60) return `${Math.floor(sec / 60)} min`;
+    return `${sec} s`;
+  }
+  function formatTokens(t) {
+    if (t == null) return 'sin dato';
+    const num = Number(t);
+    if (num >= 1000000) {
+      const m = num / 1000000;
+      return `${m % 1 === 0 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, '')} M`;
+    }
+    if (num >= 1000) {
+      const k = num / 1000;
+      if (k >= 100 || k % 1 === 0 || num % 1000 === 0) return `${Math.round(k)} k`;
+      return `${k.toFixed(1).replace(/\.0$/, '')} k`;
+    }
+    return String(num);
+  }
   function sprite(context, rows, palette, x, y, factor = 1) {
     rows.forEach((row, ry) => [...row].forEach((pixel, rx) => {
       if (pixel !== '.' && palette[pixel]) {
@@ -72,23 +97,34 @@
       return `${agent.display}: ${stateLabels[safeState(name)].toLowerCase()}, cuota ${pct == null ? '?' : pct+'%'}`;
     }).join('. '));
     $('running-count').textContent = state.counts.running ?? 0;
-    $('review-count').textContent = state.counts.review ?? 0;
-    $('merged-count').textContent = state.counts.merged_today ?? 0;
-    window.officePanels?.counts(state.counts);
-    if (changed('team',agents)) $('team').replaceChildren(...names.map(name => {
-      const agent = state.agents[name], row = node('div','team-row'), portrait = node('canvas','portrait');
-      portrait.width=32; portrait.height=32; portrait.id=`portrait-${name}`;
-      portrait.setAttribute('aria-hidden','true');
-      sprite(portrait.getContext('2d'), faceRows(name, 'base'), palette(name), 0, 0, 2);
-      const info = node('div','team-info'), heading = node('div','team-heading');
-      const title = node('span','team-name',agent.display.toUpperCase()); title.style.color=agent.color;
-      heading.append(title,pill(stateLabels[safeState(name)],stateColor(safeState(name))));
-      info.append(heading);
-      if (agent.detail) info.append(node('div','team-detail',agent.detail));
-      info.append(quotaBar(agent));
-      if (agent.subagents?.length) info.append(node('div','subagent-count',`${agent.subagents.length} subagentes`));
-      row.append(portrait,info); return row;
-    }));
+  $('review-count').textContent = state.counts.review ?? 0;
+  $('merged-count').textContent = state.counts.merged_today ?? 0;
+  window.officePanels?.counts(state.counts);
+  if (changed('team',agents)) $('team').replaceChildren(...names.map(name => {
+    const agent = state.agents[name], row = node('div','team-row'), portrait = node('canvas','portrait');
+    portrait.width=32; portrait.height=32; portrait.id=`portrait-${name}`;
+    portrait.setAttribute('aria-hidden','true');
+    sprite(portrait.getContext('2d'), faceRows(name, 'base'), palette(name), 0, 0, 2);
+    const info = node('div','team-info'), heading = node('div','team-heading');
+    const title = node('span','team-name',agent.display.toUpperCase()); title.style.color=agent.color;
+    heading.append(title,pill(stateLabels[safeState(name)],stateColor(safeState(name))));
+    info.append(heading);
+    if (agent.detail) info.append(node('div','team-detail',agent.detail));
+    info.append(quotaBar(agent));
+    const timeText = (!agent.time || agent.time.today_s == null)
+      ? '⏱ sin dato'
+      : `⏱ hoy ${formatTime(agent.time.today_s)} · semana ${formatTime(agent.time.week_s)}`;
+    info.append(node('div', 'team-time', timeText));
+    if (agent.usage && agent.usage.tokens_today != null) {
+      const tokensFormatted = formatTokens(agent.usage.tokens_today);
+      const usageText = agent.role === 'main'
+        ? `≈ ${tokensFormatted} tokens hoy`
+        : `≈ ${tokensFormatted} tokens hoy · ${agent.usage.rounds_today ?? 0} rondas`;
+      info.append(node('div', 'team-tokens', usageText));
+    }
+    if (agent.subagents?.length) info.append(node('div','subagent-count',`${agent.subagents.length} subagentes`));
+    row.append(portrait,info); return row;
+  }));
     if (changed('runs',state.runs)) {
       const focusRun = document.activeElement?.dataset.runId;
       $('runs').replaceChildren(...(state.runs.length ? state.runs.slice(0,12).map(run => {
@@ -101,26 +137,66 @@
       }) : [node('p','empty','Todavía no hay tareas. Delega una con ai-delegate.')]));
       if (focusRun) [...$('runs').children].find(c=>c.dataset.runId===focusRun)?.focus();
     }
-    if (!changed('stats',state.stats)) return;
-    if (!state.stats.length) $('stats').replaceChildren(node('p','empty','Sin datos todavía.'));
-    else {
-      const table=node('table'), head=node('thead'), hr=node('tr');
-      ['agente','tipo','total','1ª %'].forEach(label=>{const th=node('th','',label);th.scope='col';
-        hr.append(th);});head.append(hr);
-      const body=node('tbody');
-      state.stats.forEach(stat=>{const row=node('tr');[stat.agent,stat.kind,stat.total,
-        `${stat.primera_pct ?? 0}%`].forEach(value=>row.append(node('td','',String(value))));body.append(row);});
-      table.append(head,body);$('stats').replaceChildren(table);
+    if (changed('stats', [state.stats, names.map(n => [n, state.agents[n].time, state.agents[n].usage])])) {
+      const container = $('stats');
+      const children = [];
+      if (!state.stats.length) {
+        children.push(node('p','empty','Sin datos todavía.'));
+      } else {
+        const table=node('table'), head=node('thead'), hr=node('tr');
+        ['agente','tipo','total','1ª %'].forEach(label=>{const th=node('th','',label);th.scope='col';
+          hr.append(th);});head.append(hr);
+        const body=node('tbody');
+        state.stats.forEach(stat=>{const row=node('tr');[stat.agent,stat.kind,stat.total,
+          `${stat.primera_pct ?? 0}%`].forEach(value=>row.append(node('td','',String(value))));body.append(row);});
+        table.append(head,body);
+        children.push(table);
+      }
+
+      const timeHeading = node('h2', '', 'Tiempo');
+      timeHeading.style.marginTop = '16px';
+      const timeTable = node('table'), tHead = node('thead'), tHr = node('tr');
+      ['IA', 'hoy', 'semana', 'total', 'tokens hoy'].forEach(label => {
+        const th = node('th', '', label); th.scope = 'col';
+        tHr.append(th);
+      });
+      tHead.append(tHr);
+      const tBody = node('tbody');
+      names.forEach(name => {
+        const agent = state.agents[name];
+        const tr = node('tr');
+        const iaName = agent.display || name;
+        const today = formatTime(agent.time?.today_s);
+        const week = formatTime(agent.time?.week_s);
+        const total = formatTime(agent.time?.total_s);
+        const tokensToday = formatTokens(agent.usage?.tokens_today);
+        [iaName, today, week, total, tokensToday].forEach(val => tr.append(node('td', '', String(val))));
+        tBody.append(tr);
+      });
+      timeTable.append(tHead, tBody);
+      children.push(timeHeading, timeTable);
+      container.replaceChildren(...children);
     }
   }
   function connection(label,color) {$('connection-text').textContent=label;$('connection').style.color=`var(${color})`;}
   async function poll() {
     if (demo) return;
+    let data;
     try {
-      const response=await fetch('/api/state',{cache:'no-store'});
+      const response = await fetch('/api/state', {cache: 'no-store'});
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      render(await response.json());connection('EN VIVO','--ok');
-    } catch {connection('SIN CONEXIÓN','--err');}
+      data = await response.json();
+    } catch {
+      connection('SIN CONEXIÓN', '--err');
+      return;
+    }
+    try {
+      render(data);
+      connection('EN VIVO', '--ok');
+    } catch (err) {
+      console.error(err);
+      connection('ERROR DE INTERFAZ', '--warn');
+    }
   }
   const overlay=$('modal-overlay'), panel=$('detail-panel'), content=$('detail-content');
   function closeDetail() {
@@ -203,15 +279,25 @@
   function quotaColor(pct) {return art.palettes.mug_fill[pct>=50?'high':pct>=20?'mid':'low'];}
   function quotaLines(agent) {
     const quota=agent.quota;
-    if (!quota || quota.remaining_pct==null) return ['sin dato de cuota','?'];
-    const lines=quota.estimated?['estimado']:[];
-    for (const window of quota.windows || []) {
-      const date=window.resets_at ? new Date(window.resets_at) : null;
-      const reset=date ? date.toLocaleString('es',{...(date.toDateString()===new Date().toDateString()
-        ? {hour:'2-digit',minute:'2-digit'} : {day:'numeric',month:'short'})}) : '?';
-      lines.push(`${window.label}: queda ${window.used_pct==null?'?':100-window.used_pct}% · reinicia ${reset}`);
+    const lines=[];
+    if (!quota || quota.remaining_pct==null) {
+      lines.push('sin dato de cuota');
+    } else {
+      if (quota.estimated) lines.push('estimado');
+      for (const window of quota.windows || []) {
+        const date=window.resets_at ? new Date(window.resets_at) : null;
+        const reset=date ? date.toLocaleString('es',{...(date.toDateString()===new Date().toDateString()
+          ? {hour:'2-digit',minute:'2-digit'} : {day:'numeric',month:'short'})}) : '?';
+        lines.push(`${window.label}: queda ${window.used_pct==null?'?':100-window.used_pct}% · reinicia ${reset}`);
+      }
     }
-    return lines;
+    if (agent.usage && agent.usage.tokens_today != null) {
+      lines.push(`uso: ${formatTokens(agent.usage.tokens_today)} tokens hoy`);
+    }
+    if (agent.time && agent.time.today_s != null) {
+      lines.push(`tiempo hoy: ${formatTime(agent.time.today_s)}`);
+    }
+    return lines.length ? lines : ['sin dato de cuota', '?'];
   }
   function quotaBar(agent) {
     const row=node('div','quota-row'), bar=node('div','quota-bar'), quota=agent.quota;
@@ -221,12 +307,26 @@
       segment.style.background=pct!=null && i<Math.round(pct/10)?quotaColor(pct):'var(--line)';
       bar.append(segment);
     }
-    row.append(bar,node('span','quota-value',pct==null?'SIN DATO':`${quota.estimated?'~':''}${pct}%`));
-    const window=(quota?.windows || []).filter(w=>w.used_pct!=null && w.resets_at)
-    .sort((a,b)=>b.used_pct-a.used_pct)[0];
-    if (window) {
-      const minutes=Math.max(0,Math.ceil((new Date(window.resets_at)-Date.now())/60000));
-      row.append(node('span','quota-reset',`reinicia en ${Math.floor(minutes/60)} h ${minutes%60} min`));
+    if (quota?.stale) {
+      bar.style.opacity = '0.5';
+    }
+    let valueText = 'SIN DATO';
+    if (pct != null) {
+      valueText = `${quota.estimated?'~':''}${pct}%`;
+    } else if (agent.usage && agent.usage.tokens_today != null) {
+      valueText = `USO: ${formatTokens(agent.usage.tokens_today).toUpperCase()} HOY`;
+    }
+    row.append(bar,node('span','quota-value',valueText));
+    if (quota?.stale && quota?.ts) {
+      const minutes = Math.max(1, Math.round((Date.now() - new Date(quota.ts).getTime()) / 60000));
+      row.append(node('span','quota-reset',`(hace ${minutes} min)`));
+    } else {
+      const window=(quota?.windows || []).filter(w=>w.used_pct!=null && w.resets_at)
+        .sort((a,b)=>b.used_pct-a.used_pct)[0];
+      if (window) {
+        const minutes=Math.max(0,Math.ceil((new Date(window.resets_at)-Date.now())/60000));
+        row.append(node('span','quota-reset',`reinicia en ${Math.floor(minutes/60)} h ${minutes%60} min`));
+      }
     }
     return row;
   }
@@ -238,9 +338,7 @@
     {name:'codex',display:'Codex',color:'#3ddc97',role:'agent'},
     {name:'agy',display:'agy',color:'#7b8cff',role:'agent'},
     {name:'opencode',display:'OpenCode',color:'#f0a500',role:'agent',
-      look:{hair:'#2e5d4b',color:'#f0a500'}},
-    {name:'aider',display:'Aider',color:'#e05a9a',role:'agent',
-      look:{hair:'#5a3a2a',color:'#e05a9a'}}
+      look:{hair:'#2e5d4b',color:'#f0a500'}}
     ];
     agents.forEach(agent => {
       agent.role = agent.name === demoMaster ? 'main' : 'agent';
@@ -252,21 +350,43 @@
       agent.run_id = `demo-${agent.name}`; agent.subagents = [];
       agent.quota = null;
     });
-    agents[1].quota = {remaining_pct:93,estimated:false,windows:[
-      {label:'5 h',used_pct:7,resets_at:resets},{label:'7 d',used_pct:1,resets_at:resets}]};
-    agents[2].quota = {remaining_pct:60,estimated:true,windows:[]};
-    if (demoStep >= 4) agents[0].quota = {remaining_pct:15,estimated:false,windows:[]};
-    if (demoStep >= 1 && demoStep < 5) agents[0].subagents = [{label:'Revisión'},{label:'Análisis'}];
-    if (demoStep >= 2) agents[1].subagents = [{label:'Checks'}];
-    if (demoStep >= 4) {
-      agents[2].state = 'quota'; agents[2].quota.remaining_pct = 0;
+    const claudeAgent = agents.find(a => a.name === 'claude');
+    if (claudeAgent) {
+      claudeAgent.quota = {remaining_pct:77,estimated:false,stale:false,ts:new Date().toISOString(),windows:[
+        {label:'5 h',used_pct:23.0,resets_at:resets},{label:'7 d',used_pct:8.0,resets_at:resets}]};
+      claudeAgent.usage = {tokens_5h:450000,tokens_today:2400000,tokens_week:9800000,rounds_today:0};
+      claudeAgent.time = {today_s:4320,week_s:24000,total_s:86400};
+    }
+    const codexAgent = agents.find(a => a.name === 'codex');
+    if (codexAgent) {
+      codexAgent.quota = {remaining_pct:93,estimated:false,windows:[
+        {label:'5 h',used_pct:7.0,resets_at:resets},{label:'7 d',used_pct:1.0,resets_at:resets}]};
+      codexAgent.usage = {tokens_5h:220000,tokens_today:1200000,tokens_week:4300000,rounds_today:34};
+      codexAgent.time = {today_s:2100,week_s:8100,total_s:36300};
+    }
+    const agyAgent = agents.find(a => a.name === 'agy');
+    if (agyAgent) {
+      agyAgent.quota = {source:'budget',remaining_pct:null,estimated:true,windows:[
+        {label:'hoy: 850000 tokens',used_pct:null,resets_at:null}]};
+      agyAgent.usage = {tokens_5h:150000,tokens_today:850000,tokens_week:2100000,rounds_today:18};
+      agyAgent.time = {today_s:40,week_s:300,total_s:1800};
+    }
+    const opencodeAgent = agents.find(a => a.name === 'opencode');
+    if (opencodeAgent) {
+      opencodeAgent.quota = {remaining_pct:50,estimated:true,windows:[]};
+      opencodeAgent.usage = {tokens_5h:50000,tokens_today:920,tokens_week:5000,rounds_today:2};
+      opencodeAgent.time = {today_s:30,week_s:120,total_s:400};
+    }
+    if (demoStep >= 1 && demoStep < 5 && claudeAgent) claudeAgent.subagents = [{label:'Revisión'},{label:'Análisis'}];
+    if (demoStep >= 2 && codexAgent) codexAgent.subagents = [{label:'Checks'}];
+    if (demoStep >= 4 && agyAgent) {
+      agyAgent.state = 'quota';
     }
     if (demoStep === 6) {
-      agents[1].state='celebrate'; agents[1].detail='¡integrado!';
-      agents[2].state='quota'; agents[2].quota.remaining_pct=0;
+      if (codexAgent) { codexAgent.state='celebrate'; codexAgent.detail='¡integrado!'; }
+      if (agyAgent) { agyAgent.state='quota'; }
     }
-    if (demoStep >= 2) { agents[3].state = 'idle'; agents[3].since = new Date(Date.now()-130000).toISOString(); }
-    if (demoStep >= 3) agents[4].state = 'sleep';
+    if (demoStep >= 2 && opencodeAgent) { opencodeAgent.state = 'idle'; opencodeAgent.since = new Date(Date.now()-130000).toISOString(); }
     if (demoConfig) {
       agents.forEach(agent => {
         const config = demoConfig.agents[agent.name];
@@ -301,6 +421,7 @@
       else poll();
     }});
   let demoMaster = demoMain;
+  window.render = render;
   render({agents:[]});
   firstEvents = true;
   let pollTimer;

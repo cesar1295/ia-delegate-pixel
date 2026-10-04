@@ -67,3 +67,66 @@ def main(argv: list[str]) -> int:
             except OSError:
                 pass
     return 0
+
+
+def statusline_main(argv: list[str] | None = None) -> int:
+    """Procesa rate_limits de Claude Code para la statusline y guarda claude-quota.json."""
+    temporary: Path | None = None
+    output_parts = ["ai-delegate"]
+    try:
+        raw = sys.stdin.read()
+        if raw.strip():
+            payload = json.loads(raw)
+            if isinstance(payload, dict) and "rate_limits" in payload:
+                rate_limits = payload["rate_limits"]
+                if isinstance(rate_limits, dict):
+                    windows: list[dict[str, Any]] = []
+                    order = [("five_hour", "5 h"), ("seven_day", "7 d")]
+                    known_keys = {"five_hour", "seven_day"}
+                    for key, label in order:
+                        if key in rate_limits and isinstance(rate_limits[key], dict):
+                            item = rate_limits[key]
+                            used = item.get("used_percentage", item.get("used_pct"))
+                            if used is not None:
+                                used_float = float(used)
+                                reset = item.get("resets_at")
+                                if isinstance(reset, (int, float)):
+                                    reset_iso = datetime.fromtimestamp(reset).astimezone().isoformat()
+                                elif isinstance(reset, str):
+                                    reset_iso = reset
+                                else:
+                                    reset_iso = None
+                                windows.append({"label": label, "used_pct": used_float, "resets_at": reset_iso})
+                                output_parts.append(f"{label.replace(' ', '')} {round(used_float)}%")
+
+                    for key, item in rate_limits.items():
+                        if key not in known_keys and isinstance(item, dict):
+                            used = item.get("used_percentage", item.get("used_pct"))
+                            if used is not None:
+                                used_float = float(used)
+                                reset = item.get("resets_at")
+                                reset_iso = datetime.fromtimestamp(reset).astimezone().isoformat() if isinstance(reset, (int, float)) else None
+                                lbl = key.replace("_", " ")
+                                windows.append({"label": lbl, "used_pct": used_float, "resets_at": reset_iso})
+                                output_parts.append(f"{lbl.replace(' ', '')} {round(used_float)}%")
+
+                    if windows:
+                        root = config.data_dir()
+                        root.mkdir(parents=True, exist_ok=True)
+                        now = datetime.now()
+                        data = {"ts": now.isoformat(timespec="seconds"), "windows": windows}
+                        with tempfile.NamedTemporaryFile(mode="w", dir=root, delete=False, encoding="utf-8") as fh:
+                            temporary = Path(fh.name)
+                            json.dump(data, fh, ensure_ascii=False)
+                        temporary.replace(root / "claude-quota.json")
+                        temporary = None
+    except Exception:
+        output_parts = ["ai-delegate"]
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+    print(" · ".join(output_parts))
+    return 0

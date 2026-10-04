@@ -389,7 +389,7 @@ header {
   font:400 9px var(--pixel)
 }
 
-.quota-reset,.subagent-count  {
+.quota-reset,.subagent-count,.team-time,.team-tokens  {
   font:11px var(--body);
   color:var(--muted)
 }
