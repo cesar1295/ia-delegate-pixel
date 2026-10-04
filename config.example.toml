@@ -1,0 +1,23 @@
+# Copia a ~/.config/ai-delegate/config.toml y cambia solo lo que quieras;
+# lo que no pongas toma el valor por defecto (aidelegate/config.py).
+
+[routing]
+# tipo = "codex" | "agy" | "main" (lo hace la sesión principal)
+# docs = "codex"
+
+[limits]
+# max_fix_rounds = 3      # correcciones automáticas cuando fallan los checks
+# max_review_rounds = 2   # rondas de feedback antes de sugerir escalar
+# timeout_min = 30
+# keep_days = 7
+
+[agents.codex]
+# model = ""             # vacío = el de tu config de Codex
+# home = ""              # perfil aislado opcional (otra cuenta)
+
+[agents.agy]
+# model = ""
+
+# Checks por proyecto cuando la detección automática no basta:
+# [projects."/home/usuario/Documentos/Proyectos/sportswear-ecommerce"]
+# check = "npm run lint && npm run test"
