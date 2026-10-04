@@ -8,7 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from . import checks, config, loop, prompt, report, routing, runners, runs, stats, worktree
+from . import checks, config, escalation, loop, prompt, report, routing, runners, runs, stats, worktree
 from .args import parse, parse_duration
 from .errors import DelegateError, SecretFound
 from .runners import AgentResult, Runner
@@ -52,7 +52,7 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     kind = routing.validate_kind(args.kind, cfg)
     _require_design_spec(args, kind, cfg)
     mode = args.mode or routing.default_mode(kind, cfg)
-    agent = routing.resolve_target(args.to, kind, cfg)
+    agent, reason = routing.resolve_target_with_reason(args.to, kind, cfg)
     runner = runners.get(agent, cfg, args.model)
     if args.print_env:
         print("\n".join(sorted(runner.env())))
@@ -63,7 +63,7 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     root = worktree.repo_root(source)
     # En disco y hacia el agente solo va la versión limpia de la tarea.
     safe_task = sanitize(task, source="la tarea", on_secret="redact")
-    meta = _new_meta(agent, mode, kind, safe_task, source, root, args.resume)
+    meta = _new_meta(agent, mode, kind, safe_task, source, root, args.resume, reason)
     run_dir = runs.create(meta)
     try:
         sanitize(task, source="la tarea")  # bloquea si trae secretos
@@ -94,7 +94,7 @@ def _execute(args: argparse.Namespace, cfg: dict[str, Any], meta: RunMeta, run_d
         lambda res: res.quota_exhausted,
     )
     report.print_run(meta, run_dir, cfg["limits"]["summary_lines"])
-    return 0 if meta.status in SUCCESS else 1
+    return 0 if meta.status in SUCCESS else 3 if meta.status == "escalado-a-main" else 1
 
 
 def _attempt(session: loop.Session, cfg: dict[str, Any], model: str | None, name: str,
@@ -110,12 +110,13 @@ def _attempt(session: loop.Session, cfg: dict[str, Any], model: str | None, name
     return loop.drive(session, sanitize(text, source="el prompt"), "tarea")
 
 
-def _new_meta(agent: str, mode: str, kind: str, task: str, source: Path, root: Path | None, resume: str | None) -> RunMeta:
+def _new_meta(agent: str, mode: str, kind: str, task: str, source: Path, root: Path | None, resume: str | None,
+              target_reason: str | None = None) -> RunMeta:
     repo = (root or source).name
     return RunMeta(
         run_id=runs.new_run_id(repo, agent), agent=agent, mode=mode, kind=kind, repo=repo,
         source_dir=str(source), workdir=str(source), task=task,
-        project_root=str(root) if root else None, thread_id=resume,
+        project_root=str(root) if root else None, thread_id=resume, target_reason=target_reason,
     )
 
 
@@ -199,6 +200,10 @@ def cmd_diff(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 def cmd_feedback(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     meta, run_dir = _load(args.run)
     _require_open(meta)
+    escalate_after = cfg.get("strategy", {}).get("escalate_after", 3)
+    if meta.corrections >= escalate_after and not args.force:
+        return escalation.escalate_run(meta, run_dir, cfg, extra_feedback=" ".join(args.text))
+
     limit = cfg["limits"]["max_review_rounds"]
     if meta.review_rounds >= limit and not args.force:
         raise DelegateError(
@@ -215,37 +220,7 @@ def cmd_feedback(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 def cmd_escalate(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     meta, run_dir = _load(args.run)
     _require_open(meta)
-    previous, nxt = meta.agent, routing.next_in_chain(meta.agent, cfg)
-    runs.add_event(meta, "escalated", nxt)
-    stats.record(meta, "escalado")
-    meta.escalated_from.append(previous)
-    if nxt == routing.MAIN:
-        return _escalate_to_main(meta, run_dir)
-    meta.agent, meta.thread_id, meta.review_rounds, meta.fix_rounds = nxt, None, 0, 0
-    runs.add_event(meta, "assigned", previous)
-    design = _reload_design_spec(meta)
-    text = prompt.compose_escalation(meta.task, previous, meta.feedback, meta.diffstat or "", design)
-    return _continue(meta, run_dir, cfg, sanitize(text, source="el prompt de escalamiento"), "escalamiento")
-
-
-def _reload_design_spec(meta: RunMeta) -> str | None:
-    if not meta.design_spec_path:
-        return None
-    path = Path(meta.design_spec_path)
-    if not path.is_file():
-        raise DelegateError(f"La especificación de diseño ya no existe: {path}. Restáurala antes de escalar.")
-    return prompt.read_context_file(path)
-
-
-def _escalate_to_main(meta: RunMeta, run_dir: Path) -> int:
-    previous = meta.agent
-    meta.agent, meta.status = routing.MAIN, "escalado-a-main"
-    runs.add_event(meta, "assigned", previous)
-    runs.save(meta, run_dir)
-    where = f"{report.short(meta.worktree)} (rama {meta.branch})" if meta.worktree else meta.workdir
-    print(f"Te toca a ti (sesión principal). Trabaja en: {where}")
-    print(f"Cuando termines: ai-delegate merge {meta.run_id}")
-    return 3
+    return escalation.escalate_run(meta, run_dir, cfg)
 
 
 def _continue(meta: RunMeta, run_dir: Path, cfg: dict[str, Any], text: str, label: str) -> int:
@@ -301,6 +276,12 @@ def cmd_list(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 def cmd_ui(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     """Abre la oficina local."""
+    if getattr(args, "service", None):
+        from .service import handle_service
+        return handle_service(args.service, args.port)
+    if getattr(args, "app", False):
+        from .service import open_app
+        return open_app(args.port)
     from .ui_server import serve
     return serve(args.port, args.no_open)
 
@@ -333,11 +314,14 @@ def _existing_dir(raw: str) -> Path:
 def _session(meta: RunMeta, run_dir: Path, cfg: dict[str, Any], runner: Runner,
              timeout: str | None, max_fix: int | None) -> loop.Session:
     limits = cfg["limits"]
+    escalate_after = cfg.get("strategy", {}).get("escalate_after", 3)
     return loop.Session(
         meta=meta, run_dir=run_dir, runner=runner,
         timeout_s=parse_duration(timeout, limits["timeout_min"] * 60),
         check_timeout_s=limits["check_timeout_min"] * 60,
         max_fix_rounds=limits["max_fix_rounds"] if max_fix is None else max_fix,
+        escalate_after=escalate_after,
+        cfg=cfg,
     )
 
 

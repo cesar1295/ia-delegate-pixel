@@ -126,7 +126,12 @@ def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dic
     for name, settings, role in [(master, cfg["agents"].get(master, {}), "main"),
                                   *((n, a, "agent") for n, a in cfg["agents"].items() if n != master)]:
         matching = [m for m in ordered if m.agent == name]
-        state = _main(ordered, claude if name == "claude" else None, now, name, cfg.get("user_name", config.DEFAULTS["user_name"])) if role == "main" else _agent(matching, now, max_fix_rounds)
+        if settings.get("enabled", True) is False:
+            state = character("idle", "desactivado")
+        elif role == "main":
+            state = _main(ordered, claude if name == "claude" else None, now, name, cfg.get("user_name", config.DEFAULTS["user_name"]))
+        else:
+            state = _agent(matching, now, max_fix_rounds)
         color = settings.get("color", "#3a3a48")
         active = next((m for m in matching if m.run_id == state["run_id"] and alive(m, now)), None)
         if role == "main":
@@ -147,4 +152,6 @@ def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dic
                    "review": sum(r["status"] == "listo-para-revisar" for r in rows),
                    "merged_today": sum(r.get("outcome") == "integrado" and
                                        str(r.get("ts", ""))[:10] == now.date().isoformat() for r in ledger_rows)},
-        "stats": stats.aggregate(ledger_rows)}
+        "stats": stats.aggregate(ledger_rows),
+        "strategy": cfg.get("strategy", config.DEFAULTS.get("strategy", {})),
+        "ui": cfg.get("ui", config.DEFAULTS.get("ui", {"time_mode": "auto", "fixed_hour": 12}))}

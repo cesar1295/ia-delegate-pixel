@@ -55,6 +55,11 @@ class RunMeta:
     error: str | None = None
     events: list[dict] = field(default_factory=list)
     subagents: list[dict] = field(default_factory=list)
+    target_reason: str | None = None
+
+    @property
+    def corrections(self) -> int:
+        return self.fix_rounds + self.review_rounds
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RunMeta":

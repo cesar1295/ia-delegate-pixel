@@ -18,3 +18,16 @@ def test_exact_limit_not_marked_as_cut():
 
 def test_empty():
     assert trim("", 15) == ("", False)
+
+
+def test_garbled_markdown_links():
+    from aidelegate.summary import looks_garbled
+
+    resumen = (
+        "- En [routing.py](file:///home/usuario/.local/share/ai-delegate/worktrees/20261004-154459-ai-delegate-agy/aidelegate/routing.py#L182-L200), corregí la función.\n"
+        "- En [loop.py](file:///home/usuario/.local/share/ai-delegate/worktrees/20261004-154459-ai-delegate-agy/aidelegate/loop.py#L75), eliminé el argumento inexistente.\n"
+        "- Archivos tocados: [aidelegate/routing.py](file:///home/usuario/.local/share/ai-delegate/worktrees/20261004-154459-ai-delegate-agy/aidelegate/routing.py) y [aidelegate/loop.py](file:///home/usuario/.local/share/ai-delegate/worktrees/20261004-154459-ai-delegate-agy/aidelegate/loop.py).\n"
+        "- Verificación: validación de lógica y diff estricto con git diff.\n"
+    )
+    assert not looks_garbled(resumen)
+    assert looks_garbled("a" * 300)

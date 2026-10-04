@@ -11,6 +11,10 @@ import json
 import sys
 from pathlib import Path
 
+if "--version" in sys.argv:
+    print("codex 0.1.0")
+    sys.exit(0)
+
 args = sys.argv[1:]
 prompt = args[-1]
 resume = "resume" in args

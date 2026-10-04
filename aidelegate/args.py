@@ -48,6 +48,8 @@ def _parser() -> argparse.ArgumentParser:
     ui = sub.add_parser("ui", help="Abre la oficina pixel local.")
     ui.add_argument("--port", type=int, default=8765)
     ui.add_argument("--no-open", action="store_true")
+    ui.add_argument("--service", choices=("install", "uninstall", "status"), help="Administra el servicio del sistema")
+    ui.add_argument("--app", action="store_true", help="Abre en ventana de aplicación")
     status = sub.add_parser("claude-status", help="Actualiza silenciosamente el estado de Claude.")
     status.add_argument("state", nargs="?", choices=("working", "waiting", "idle"))
     status.add_argument("--detail")

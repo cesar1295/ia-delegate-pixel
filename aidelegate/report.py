@@ -15,6 +15,8 @@ def short(path: str | Path) -> str:
 
 def print_run(meta: RunMeta, run_dir: Path, max_lines: int) -> None:
     print(f"{meta.agent} | {meta.mode} | {meta.repo} | {meta.status} | {round(meta.duration_s)}s")
+    if meta.target_reason:
+        print(f"elegido: {meta.agent} ({meta.target_reason})")
     if meta.fallback_from:
         print(f"nota: {meta.fallback_from} agotó su cuota; se usó {meta.agent}")
     print(f"thread: {meta.thread_id or '-'}")
