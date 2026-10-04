@@ -20,8 +20,8 @@ DEFAULTS: dict[str, Any] = {
         "refactor": "codex",
         "api": "codex",
         "review": "codex",
-        # leer un repo en modo lectura: agy sin interfaz no puede (le niegan la terminal)
-        "summarize": "codex",
+        # agy lee repos gracias a las reglas permissions.allow de su settings.json
+        "summarize": "agy",
         "test": "agy",
         "docs": "agy",
         "mock": "agy",

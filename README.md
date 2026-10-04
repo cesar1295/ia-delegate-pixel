@@ -19,9 +19,9 @@ Codex y agy usan tus sesiones ya iniciadas. ai-delegate nunca lee ni guarda cred
 |---|---|---|
 | `design`, `security` | **la sesión principal**: no se delegan (sale con código 3) | — |
 | `feature`, `bugfix`, `refactor`, `api` | codex | write |
-| `review`, `summarize` | codex | read |
+| `review` | codex | read |
 | `test`, `docs`, `mock`, `i18n`, `chore`, `image` | agy | write |
-| `research` | agy | read |
+| `research`, `summarize` | agy | read |
 
 Puedes cambiar estas reglas en `~/.config/ai-delegate/config.toml` (ver `config.example.toml`).
 
@@ -41,7 +41,7 @@ ai-delegate list | show <id> | stats
 - **Respaldo**: con `--to auto`, si un agente agota su cuota se reintenta con el otro.
 - **Corridas**: cada una deja `prompt.md`, `events.jsonl`, `last.md`, `checks.log` y `meta.json` en `~/.local/share/ai-delegate/runs/<id>/`. Las corridas cerradas de más de 7 días se borran solas. Las estadísticas viven aparte, en `ledger.jsonl`.
 - **Seguridad**: el subproceso recibe un entorno limpio (`--print-env` muestra solo los nombres). Antes de enviar algo se bloquean los secretos (`sk-…`, `ghp_…`, `*_TOKEN=…`, `Bearer …`, llaves privadas) y se reemplazan correos, teléfonos y tarjetas por marcadores. Ojo: el agente sí puede leer los archivos del repo, como tu `.env`.
-- **agy sin interfaz**: corre en `--mode accept-edits` (escritura) y `--mode plan` (lectura), sin saltarse permisos. No puede usar la terminal, así que edita con sus herramientas de archivos y ai-delegate corre los checks por él. En lectura puede investigar en la web, pero no leer repos locales; por eso `summarize` va a codex.
+- **agy sin interfaz**: corre en `--mode accept-edits` (escritura) y `--mode plan` (lectura), sin saltarse permisos. Sin interfaz no puede pedir permisos, así que en `~/.gemini/antigravity-cli/settings.json` solo tiene permitidos comandos de lectura (`ls`, `tree`, `pwd`, `cat`, `head`, `tail`, `wc`, `grep` y `git status/log/diff/show/ls-files`). Además, `rm`, `sudo` y los comandos de git que reescriben historial están negados explícitamente. Todo lo demás se rechaza (también probé que `cat > archivo` y `touch` se rechazan). Edita con sus herramientas de archivos y ai-delegate corre los checks por él.
 
 Otras opciones de `run`: `--task-file`, `--issue` (requiere `gh`), `--context-file`, `--resume <thread>`, `--timeout 20m`, `--model`, `--no-worktree`, `--dry-run`.
 

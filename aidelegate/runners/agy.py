@@ -19,10 +19,12 @@ MODE_FLAGS = {
 class AgyRunner(Runner):
     name = "agy"
     prompt_hint = (
-        "No ejecutes comandos de terminal (en este modo se niegan). Usa tus herramientas de "
-        "archivos: view_file, list_dir, grep_search y edición de archivos. No lances subagentes: "
-        "lee tú mismo y responde en este mismo turno. Los tests los corre la herramienta que te "
-        "llamó y te devolverá los errores si fallan."
+        "En la terminal solo tienes permitidos comandos de lectura: ls, tree, pwd, cat, head, "
+        "tail, wc, grep y git status/log/diff/show/ls-files (sin pipes ni redirecciones); "
+        "cualquier otro se niega. Prefiere tus herramientas de archivos: view_file, list_dir, "
+        "grep_search y edición de archivos. No lances subagentes: lee tú mismo y responde en "
+        "este mismo turno. Los tests los corre la herramienta que te llamó y te devolverá los "
+        "errores si fallan."
     )
 
     def argv(self, prompt: str, mode: str, cwd: Path, resume_id: str | None) -> list[str]:
