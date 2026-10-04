@@ -25,7 +25,7 @@
 # daily_token_budget = 0  # desconocido; configura un presupuesto para estimar porcentaje
 
 # Checks por proyecto cuando la detección automática no basta:
-# [projects."/home/usuario/Documentos/Proyectos/sportswear-ecommerce"]
+# [projects."/home/tu-usuario/proyectos/mi-tienda"]
 # check = "npm run lint && npm run test"
 
 [agents.claude]
