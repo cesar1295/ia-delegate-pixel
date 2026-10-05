@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import activity, config, quota, stats, usage
 from .runs import RunMeta
@@ -94,10 +94,10 @@ def format_hh_mm(ts: str | None, now: datetime) -> str:
 
 
 def _main(metas: list[RunMeta], claude: dict | None, now: datetime,
-            name: str = "claude", user_name: str = "usuario") -> dict:
+            name: str = "claude", user_name: str = "usuario", cfg: dict | None = None) -> dict:
     hook = claude or {}
     hook_age = age(hook.get("ts"), now)
-    session = activity.last_activity(name)
+    session = activity.last_activity(name, cfg=cfg) if cfg and cfg["agents"].get(name, {}).get("home") else activity.last_activity(name)
     session_ts = session.isoformat() if session else None
     session_age = age(session_ts, now)
 
@@ -165,9 +165,21 @@ def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dic
         if settings.get("enabled", True) is False:
             state = character("idle", "desactivado")
         elif role == "main":
-            state = _main(ordered, claude if name == "claude" else None, now, name, cfg.get("user_name", config.DEFAULTS["user_name"]))
+            state = _main(ordered, claude if name == "claude" else None, now, name, cfg.get("user_name", config.DEFAULTS["user_name"]), cfg)
         else:
             state = _agent(matching, now, max_fix_rounds)
+            live = next((m for m in matching if alive(m, now)), None)
+            if live:
+                if live.phase == "agente":
+                    start = now - timedelta(seconds=max(0, age(live.phase_started_at or live.updated_at, now)))
+                    if activity.recent_images(name, start, cfg=cfg):
+                        state = character("drawing", "generando imágenes", live)
+            elif activity.recent_images(name, now - timedelta(seconds=90), cfg=cfg):
+                state = character("drawing", "generando imágenes")
+            else:
+                session = activity.last_activity(name, cfg=cfg) if settings.get("home") else activity.last_activity(name)
+                if session and 0 <= age(session.isoformat(), now) < 30:
+                    state = character("working", "trabajando fuera de ai-delegate", since=session.isoformat())
         color = settings.get("color", "#3a3a48")
         active = next((m for m in matching if m.run_id == state["run_id"] and alive(m, now)), None)
         if role == "main":
@@ -178,7 +190,7 @@ def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dic
         agents.append({"name": name, "display": settings.get("display", name), "color": color,
                        "role": role, "look": None if role == "main" or name in {"codex", "agy"}
                        else settings.get("look", {"hair": "#3a3a48", "color": color}),
-                       **state, "quota": quota.get(name, cfg, ordered, now),
+                       **state, "images_today": len(activity.recent_images(name, now.replace(hour=0, minute=0, second=0, microsecond=0), cfg=cfg)), "quota": quota.get(name, cfg, ordered, now),
                        "usage": usage.get_usage(name, role, cfg, ordered, now),
                        "time": usage.get_time(name, role, cfg, ordered, now),
                        "subagents": [{"id": s["id"], "label": s["label"]} for s in subs

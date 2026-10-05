@@ -8,7 +8,7 @@
   const canvas = $('office-canvas');
   let names = [], state = {agents: {}, runs: [], counts: {}, stats: []};
   const accents = {claude: '#d97757', codex: '#3ddc97', agy: '#7b8cff'};
-  const known = new Set(['idle', 'sleep', 'working', 'fixing', 'checks', 'review', 'reviewing', 'waiting',
+  const known = new Set(['idle', 'sleep', 'drawing', 'working', 'fixing', 'checks', 'review', 'reviewing', 'waiting',
     'failed', 'quota', 'celebrate']);
   const safeState = name => known.has(state.agents[name]?.state) ? state.agents[name].state : 'idle';
   let modalRequest = 0, opener = null, demoStep = 0, firstEvents = true;
@@ -77,7 +77,7 @@
   };
   function stateColor(s) {
     if (['working','fixing','checks'].includes(s)) return '--warn';
-    if (['review','reviewing','waiting'].includes(s)) return '--review';
+    if (['drawing','review','reviewing','waiting'].includes(s)) return '--review';
     if (s === 'celebrate') return '--ok';
     if (['failed','quota'].includes(s)) return '--err';
     return '--muted';
@@ -134,6 +134,7 @@
       ? '⏱ sin dato'
       : `⏱ hoy ${formatTime(agent.time.today_s)} · semana ${formatTime(agent.time.week_s)}`;
     info.append(node('div', 'team-time', timeText));
+    if (agent.images_today > 0) info.append(node('div', 'team-time', `🖼 ${agent.images_today} imágenes hoy`));
     if (agent.usage && agent.usage.tokens_today != null) {
       const tokensFormatted = formatTokens(agent.usage.tokens_today);
       const usageText = agent.role === 'main'
@@ -275,7 +276,7 @@
     } catch(error) {if(request===modalRequest)content.replaceChildren(node('p','error',
       `Error de red: ${error.message}`));}
   }
-  const stateLabels = {idle:'LIBRE',sleep:'DORMIDO',working:'TRABAJANDO',fixing:'CORRIGIENDO',
+  const stateLabels = {idle:'LIBRE',sleep:'DORMIDO',drawing:'DIBUJANDO',working:'TRABAJANDO',fixing:'CORRIGIENDO',
     checks:'CHECKS',review:'POR REVISAR',reviewing:'REVISANDO',waiting:'ESPERANDO',failed:'FALLÓ',
     quota:'SIN CUOTA',celebrate:'¡LISTO!'};
   function changed(key,value) {
@@ -398,6 +399,9 @@
     }
     if (demoStep >= 1 && demoStep < 5 && claudeAgent) claudeAgent.subagents = [{label:'Revisión'},{label:'Análisis'}];
     if (demoStep >= 2 && codexAgent) codexAgent.subagents = [{label:'Checks'}];
+    if (demoStep === 3 && agyAgent) {
+      agyAgent.state = 'drawing'; agyAgent.detail = 'generando imágenes'; agyAgent.images_today = 3;
+    }
     if (demoStep >= 4 && agyAgent) {
       agyAgent.state = 'quota';
     }

@@ -153,6 +153,7 @@ def agent_round(session: Session, text: str, label: str) -> AgentResult:
     if label != "tarea" and not session.runner.supports_resume:
         text = f"Tarea original:\n{meta.task}\n\n" + text
     meta.phase, meta.phase_label, meta.pid = "agente", label, os.getpid()
+    meta.phase_started_at = datetime.now().isoformat(timespec="seconds")
     runs.save(meta, run_dir)
     runs.append_prompt(run_dir, text, f"{label} → {meta.agent}")
 
