@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import math
+import statistics
+import tempfile
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import config
+from . import config, usage
 from .runs import RunMeta
 
 _CACHE: dict[str, tuple[float, dict]] = {}
@@ -106,25 +110,27 @@ def budget(name: str, agent: dict, metas: list[RunMeta], now: datetime) -> dict:
 
 def get(name: str, cfg: dict, metas: list[RunMeta], now: datetime | None = None) -> dict:
     now = now or datetime.now()
-    if name == "claude" and (name == config.main_name(cfg) or cfg["agents"].get(name, {}).get("quota") in ("claude", "none", "archivo")):
-        path = config.data_dir() / "claude-quota.json"
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-                windows = data.get("windows", [])
-                ts = data.get("ts")
-                elapsed = _age(ts, now) if ts else float("inf")
-                stale = elapsed >= 15 * 60 or elapsed < 0
-                res = _windows(windows, "claude")
-                res["stale"] = stale
-                if ts:
-                    res["ts"] = ts
-                return res
-            except (OSError, ValueError, KeyError, TypeError):
-                if name == config.main_name(cfg):
-                    return empty()
-        elif name == config.main_name(cfg):
+    if name == "claude":
+        try:
+            data = json.loads((config.data_dir() / "claude-quota.json").read_text())
+            windows = [w for w in data.get("windows", []) if isinstance(w, dict)
+                       and isinstance(w.get("used_pct"), (int, float)) and math.isfinite(w["used_pct"])]
+            ts = data.get("ts")
+            elapsed = _age(ts, now)
+            active = any((reset := usage.parse_ts(w.get("resets_at"), now)) is not None and reset > now
+                         for w in windows)
+            if windows and (0 <= elapsed < 900 or (elapsed >= 900 and active)):
+                return dict(_windows(windows, "claude"), stale=elapsed >= 900, ts=ts)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            pass
+        limit = cfg.get("agents", {}).get(name, {}).get("five_hour_token_budget", 0)
+        limit = limit if limit > 0 else calibration()["budget"]
+        if not limit:
             return empty()
+        used = 100 * usage.claude_tokens_5h(cfg, now) / limit
+        return {"source": "estimado", "remaining_pct": max(0, 100 - used),
+                "estimated": True, "stale": False,
+                "windows": [{"label": "5 h", "used_pct": used, "resets_at": None}]}
     agent = cfg["agents"].get(name, {})
     source = agent.get("quota", "none")
     if source == "codex":
@@ -149,3 +155,70 @@ def _age(ts: str, now: datetime) -> float:
         return (now - date).total_seconds()
     except (ValueError, TypeError):
         return float("inf")
+
+
+def _calibration_samples() -> list[dict]:
+    try:
+        data = json.loads((config.data_dir() / "claude-calibration.json").read_text())
+        return [s for s in data if isinstance(s, dict)
+                and isinstance(s.get("budget"), (int, float))
+                and math.isfinite(s["budget"]) and s["budget"] > 0][-10:] if isinstance(data, list) else []
+    except (OSError, ValueError, TypeError):
+        return []
+
+
+def calibration() -> dict:
+    samples = _calibration_samples()
+    return {"budget": round(statistics.median(s["budget"] for s in samples)) if samples else None,
+            "samples": len(samples)}
+
+
+def _calibration_tokens(now: datetime, deadline: float) -> int | None:
+    # A daemon worker keeps a blocked synchronous filesystem read from holding
+    # up the statusline or process exit. Only this caller can persist a sample.
+    done = threading.Event()
+    result: list[int] = []
+
+    def read() -> None:
+        try:
+            tokens = usage.claude_tokens_5h(config.load(), now, deadline=deadline)
+            if time.monotonic() < deadline:
+                result.append(tokens)
+        except Exception:
+            pass
+        finally:
+            done.set()
+
+    threading.Thread(target=read, daemon=True).start()
+    if not done.wait(max(0, deadline - time.monotonic())):
+        return None
+    return result[0] if result else None
+
+
+def calibrate(windows: list[dict], now: datetime) -> None:
+    """Best effort, bounded transcript scan using usage's shared file cache."""
+    temporary = None
+    try:
+        used = next((w["used_pct"] for w in windows if w.get("label") == "5 h"), 0)
+        if not math.isfinite(used) or used < 5:
+            return
+        deadline = time.monotonic() + 0.3
+        tokens = _calibration_tokens(now, deadline)
+        if tokens is None or tokens <= 0 or time.monotonic() >= deadline:
+            return
+        samples = (_calibration_samples() + [{"ts": now.isoformat(timespec="seconds"),
+                    "used_pct": used, "tokens_5h": tokens, "budget": tokens / (used / 100)}])[-10:]
+        root = config.data_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(mode="w", dir=root, delete=False, encoding="utf-8") as fh:
+            temporary = Path(fh.name)
+            json.dump(samples, fh)
+        temporary.replace(root / "claude-calibration.json")
+    except Exception:
+        pass
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass

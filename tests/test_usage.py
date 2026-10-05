@@ -128,7 +128,7 @@ def test_claude_quota_fresh_and_stale(home):
     stale_ts = (now - timedelta(minutes=25)).isoformat()
     quota_file.write_text(json.dumps({
         "ts": stale_ts,
-        "windows": [{"label": "5 h", "used_pct": 23.0, "resets_at": None}],
+        "windows": [{"label": "5 h", "used_pct": 23.0, "resets_at": (now + timedelta(hours=1)).isoformat()}],
     }))
     res_stale = quota.get("claude", cfg, [], now=now)
     assert res_stale["source"] == "claude"
@@ -373,3 +373,176 @@ def test_build_state_includes_usage_and_time(home):
         assert "week_s" in t
         assert "total_s" in t
 
+
+# --- v5.3: estimación y calibración ------------------------------------------
+
+@pytest.mark.parametrize('main', ['claude', 'codex'])
+def test_claude_manual_estimate_and_expired_real(home, monkeypatch, main):
+    import copy
+    cfg = copy.deepcopy(config.DEFAULTS)
+    cfg['main'] = main
+    cfg['agents']['claude']['five_hour_token_budget'] = 1000
+    now = datetime.now()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / 'claude-quota.json').write_text(json.dumps({
+        'ts': (now - timedelta(minutes=15)).isoformat(),
+        'windows': [{'label': '5 h', 'used_pct': 90,
+                     'resets_at': (now - timedelta(seconds=1)).isoformat()}]}))
+    monkeypatch.setattr(usage, 'claude_tokens_5h', lambda *a, **k: 250)
+    result = quota.get('claude', cfg, [], now)
+    assert result['source'] == 'estimado'
+    assert result['remaining_pct'] == 75
+    assert result['estimated'] and not result['stale']
+    assert result['windows'][0]['used_pct'] == 25
+    monkeypatch.setattr(usage, 'claude_tokens_5h', lambda *a, **k: 1500)
+    assert quota.get('claude', cfg, [], now)['remaining_pct'] == 0
+
+
+def test_claude_calibration_median_and_retention(home, monkeypatch):
+    now = datetime.now()
+    monkeypatch.setattr(usage, 'claude_tokens_5h', lambda *a, **k: 100)
+    for pct in range(5, 17):
+        quota.calibrate([{'label': '5 h', 'used_pct': pct}], now)
+    samples = json.loads((home / 'claude-calibration.json').read_text())
+    assert len(samples) == 10
+    assert samples[0]['used_pct'] == 7
+    import statistics
+    expected = round(statistics.median(s['budget'] for s in samples))
+    assert quota.calibration() == {'budget': expected, 'samples': 10}
+    result = quota.get('claude', config.DEFAULTS, [], now)
+    assert result['estimated']
+    assert result['remaining_pct'] == pytest.approx(100 - 10000 / expected)
+
+
+@pytest.mark.parametrize('pct,tokens', [(4.9, 100), (5, 0)])
+def test_claude_calibration_ignores_small_or_empty(home, monkeypatch, pct, tokens):
+    monkeypatch.setattr(usage, 'claude_tokens_5h', lambda *a, **k: tokens)
+    quota.calibrate([{'label': '5 h', 'used_pct': pct}], datetime.now())
+    assert quota.calibration() == {'budget': None, 'samples': 0}
+    assert not (home / 'claude-calibration.json').exists()
+    assert quota.get('claude', config.DEFAULTS, [])['remaining_pct'] is None
+
+
+def test_statusline_calibrates_and_survives_timeout(home, monkeypatch, capsys):
+    payload = json.dumps({'rate_limits': {'five_hour': {'used_percentage': 10}}})
+    monkeypatch.setattr(usage, 'claude_tokens_5h', lambda *a, **k: 1000)
+    monkeypatch.setattr('sys.stdin', io.StringIO(payload))
+    assert main(['claude-statusline']) == 0
+    assert quota.calibration() == {'budget': 10000, 'samples': 1}
+    def slow(*args, **kwargs):
+        raise TimeoutError()
+    monkeypatch.setattr(usage, 'claude_tokens_5h', slow)
+    monkeypatch.setattr('sys.stdin', io.StringIO(payload))
+    assert main(['claude-statusline']) == 0
+    assert quota.calibration()['samples'] == 1
+    assert capsys.readouterr().out.count('5h 10%') == 2
+
+
+def test_claude_transcript_deadline(tmp_path):
+    import time
+    folder = tmp_path / '.claude/projects/repo'
+    folder.mkdir(parents=True)
+    (folder / 'session.jsonl').write_text('{}\n')
+    with pytest.raises(TimeoutError):
+        usage._read_claude_transcripts(tmp_path, datetime.now(), deadline=time.monotonic() - 1)
+
+
+def test_claude_budget_config_validation():
+    from aidelegate.ui_server import _is_allowed_config_key, _validate_change_value
+    key = 'agents.claude.five_hour_token_budget'
+    assert _is_allowed_config_key(key)
+    assert not _is_allowed_config_key('agents.codex.five_hour_token_budget')
+    for value in [0, 1000000]:
+        assert _validate_change_value(key, value, config.DEFAULTS) is None
+    for value in [-1, True, 1.5, '100']:
+        assert _validate_change_value(key, value, config.DEFAULTS)
+
+@pytest.mark.parametrize('contents', ['no-json', '[]', '{"windows": []}', '{"ts": "bad", "windows": [null]}'])
+def test_claude_invalid_real_without_budget(home, contents):
+    home.mkdir(parents=True, exist_ok=True)
+    (home / 'claude-quota.json').write_text(contents)
+    assert quota.get('claude', config.DEFAULTS, [])['remaining_pct'] is None
+
+
+def test_claude_calibration_discards_over_300ms(home, monkeypatch):
+    monkeypatch.setattr(quota, '_calibration_tokens', lambda *a, **k: 1000)
+    ticks = iter([10, 10.301])
+    monkeypatch.setattr(quota.time, 'monotonic', lambda: next(ticks))
+    quota.calibrate([{'label': '5 h', 'used_pct': 10}], datetime.now())
+    assert quota.calibration()['samples'] == 0
+
+
+def test_calibration_does_not_wait_for_blocked_read(home, monkeypatch, capsys):
+    import threading
+    import time
+    blocked = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def read(*args, **kwargs):
+        blocked.set()
+        try:
+            release.wait(2)
+            return 1000
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(usage, 'claude_tokens_5h', read)
+    monkeypatch.setattr('sys.stdin', io.StringIO(json.dumps({
+        'rate_limits': {'five_hour': {'used_percentage': 10}}})))
+    try:
+        start = time.monotonic()
+        assert main(['claude-statusline']) == 0
+        elapsed = time.monotonic() - start
+        assert blocked.is_set()
+        assert elapsed < 0.6
+        assert '5h 10%' in capsys.readouterr().out
+        assert (home / 'claude-quota.json').exists()
+        assert quota.calibration()['samples'] == 0
+    finally:
+        release.set()
+        assert finished.wait(1)
+    assert quota.calibration()['samples'] == 0
+
+
+def test_claude_transcript_timeout_stops_before_next_file(tmp_path, monkeypatch):
+    import time
+    folder = tmp_path / '.claude/projects/repo'
+    folder.mkdir(parents=True)
+    first, second = folder / 'a.jsonl', folder / 'b.jsonl'
+    first.write_text('{}\n')
+    second.write_text('{}\n')
+    opened = []
+    def open_file(path, *args, **kwargs):
+        opened.append(path)
+        raise TimeoutError('read timed out')
+    monkeypatch.setattr(Path, 'open', open_file)
+    with pytest.raises(TimeoutError):
+        usage._read_claude_transcripts(tmp_path, datetime.now(), deadline=time.monotonic() + 1)
+    assert len(opened) == 1
+
+
+def test_statusline_process_exits_with_blocked_calibration(home, tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    script = """
+import io, json, sys, time
+from aidelegate import usage
+from aidelegate.claude_status import statusline_main
+
+def blocked(*args, **kwargs):
+    time.sleep(5)
+    return 1000
+
+usage.claude_tokens_5h = blocked
+sys.stdin = io.StringIO(json.dumps({'rate_limits': {'five_hour': {'used_percentage': 10}}}))
+statusline_main()
+"""
+    # Other tests may change cwd; the child must import this checkout reliably.
+    monkeypatch.chdir(tmp_path)
+    result = subprocess.run([sys.executable, '-c', script], capture_output=True,
+                            cwd=Path(__file__).resolve().parents[1],
+                            text=True, timeout=2, check=True)
+    assert result.stdout.strip() == 'ai-delegate · 5h 10%'
+    assert (home / 'claude-quota.json').exists()
+    assert not (home / 'claude-calibration.json').exists()

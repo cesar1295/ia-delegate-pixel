@@ -66,7 +66,7 @@ DEFAULTS: dict[str, Any] = {
     },
     # home vacío = tu HOME normal (perfil ya autenticado)
     "agents": {
-        "claude": {"type": "claude", "bin": "auto", "display": "Claude", "color": "#d97757", "quota": "none", "role_text": "funcionalidades, especificaciones y revisiones; diseño visual", "permissions": {"edit": True}},
+        "claude": {"five_hour_token_budget": 0, "type": "claude", "bin": "auto", "display": "Claude", "color": "#d97757", "quota": "none", "role_text": "funcionalidades, especificaciones y revisiones; diseño visual", "permissions": {"edit": True}},
         "codex": {"bin": "codex", "home": "", "model": "", "type": "codex",
                   "display": "Codex", "color": "#3ddc97", "quota": "codex", "role_text": "funcionalidades, bugs, refactors, endpoints, implementar especificaciones de diseño, revisiones de código", "permissions": {"edit": True, "network": False}},
         "agy": {"bin": "agy", "home": "", "model": "", "type": "agy",

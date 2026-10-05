@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -140,7 +141,11 @@ def read_work_rows() -> list[dict[str, Any]]:
     return rows
 
 
-def _read_claude_transcripts(home_path: Path, now: datetime, days: int = 30) -> tuple[list[tuple[datetime, int]], list[datetime]]:
+def _read_claude_transcripts(home_path: Path, now: datetime, days: int = 30, deadline: float | None = None) -> tuple[list[tuple[datetime, int]], list[datetime]]:
+    def check_deadline():
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("Claude usage deadline")
+
     projects_dir = home_path / ".claude/projects"
     usage_entries: list[tuple[datetime, int]] = []
     timestamps: list[datetime] = []
@@ -151,6 +156,7 @@ def _read_claude_transcripts(home_path: Path, now: datetime, days: int = 30) -> 
     candidates: list[Path] = []
     for pattern in ("*/*.jsonl", "*.jsonl"):
         for p in projects_dir.glob(pattern):
+            check_deadline()
             if p.is_file() and p not in candidates:
                 try:
                     if p.stat().st_mtime >= cutoff:
@@ -160,6 +166,7 @@ def _read_claude_transcripts(home_path: Path, now: datetime, days: int = 30) -> 
 
     for p in candidates:
         try:
+            check_deadline()
             stat = p.stat()
             key = (str(p.resolve()), stat.st_mtime, stat.st_size)
             if key in _FILE_CACHE:
@@ -172,6 +179,7 @@ def _read_claude_transcripts(home_path: Path, now: datetime, days: int = 30) -> 
             file_ts: list[datetime] = []
             with p.open("r", encoding="utf-8", errors="replace") as fh:
                 for line in fh:
+                    check_deadline()
                     line = line.strip()
                     if not line:
                         continue
@@ -206,6 +214,8 @@ def _read_claude_transcripts(home_path: Path, now: datetime, days: int = 30) -> 
             _FILE_CACHE[key] = (file_usage, file_ts)
             usage_entries.extend(file_usage)
             timestamps.extend(file_ts)
+        except TimeoutError:
+            raise
         except OSError:
             pass
 
@@ -311,7 +321,7 @@ def get_usage(name: str, role: str, cfg: dict, metas: list[RunMeta],
     if role == "main" and name == "agy":
         return {"tokens_5h": None, "tokens_today": None, "tokens_week": None, "rounds_today": 0}
 
-    if role == "main" and name == "claude":
+    if name == "claude":
         home_raw = cfg.get("agents", {}).get(name, {}).get("home") or ""
         home_path = Path(home_raw).expanduser() if home_raw else Path.home()
         usage_entries, _ = _read_claude_transcripts(home_path, now, days=7)
@@ -444,3 +454,9 @@ def get_time(name: str, role: str, cfg: dict, metas: list[RunMeta],
         "week_s": round(week_s),
         "total_s": round(total_s),
     }
+
+
+def claude_tokens_5h(cfg: dict, now: datetime, deadline: float | None = None) -> int:
+    home = cfg.get("agents", {}).get("claude", {}).get("home")
+    entries, _ = _read_claude_transcripts(Path(home).expanduser() if home else Path.home(), now, days=7, deadline=deadline)
+    return sum(tokens for ts, tokens in entries if now - timedelta(hours=5) <= ts <= now)
