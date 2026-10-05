@@ -409,3 +409,8 @@ interfaz con Node. El arte se regenera con:
 python3 tools/gen_sprites.py aidelegate/ui/static/sprites.js
 python3 tools/gen_office.py aidelegate/ui/static/office.js
 ```
+
+## Licencia
+
+[MIT](LICENSE): puedes usar, copiar, modificar y distribuir este proyecto libremente, incluso con fines
+comerciales, siempre que conserves el aviso de copyright y la licencia.
