@@ -265,7 +265,7 @@ def test_setup_change_summaries(installed, capsys, dry):
     output = capsys.readouterr().out
     assert f"crear {config.config_path()}: claves de config cambiadas: main, user_name" in output
     assert "bloque de instrucciones nuevo" in output
-    assert "7 hooks nuevos (0 ya estaban)" in output
+    assert "8 hooks nuevos (0 ya estaban)" in output
     assert f"{AGY_RULES} permisos nuevos (0 ya estaban)" in output
     if dry:
         assert main(["setup", "--yes"]) == 0
@@ -275,7 +275,7 @@ def test_setup_change_summaries(installed, capsys, dry):
     assert "actualizar (con respaldo)" in output
     assert "claves de config cambiadas: ninguna" in output
     assert "bloque de instrucciones actualizado" in output
-    assert "0 hooks nuevos (7 ya estaban)" in output
+    assert "0 hooks nuevos (8 ya estaban)" in output
     assert f"0 permisos nuevos ({AGY_RULES} ya estaban)" in output
 
 
@@ -286,3 +286,15 @@ def test_setup_migration_summary(installed, capsys):
     assert main(["setup", "--yes", "--dry-run"]) == 0
     assert "bloque de instrucciones migrado" in capsys.readouterr().out
     assert START not in path.read_text()
+
+
+def test_doctor_requires_pending_hook(installed, capsys):
+    assert main(["setup", "--yes"]) == 0
+    path = installed / ".claude/settings.json"
+    data = json.loads(path.read_text())
+    groups = data["hooks"]["UserPromptSubmit"]
+    data["hooks"]["UserPromptSubmit"] = [g for g in groups
+        if not any("pending --hook" in h.get("command", "") for h in g["hooks"])]
+    path.write_text(json.dumps(data))
+    assert main(["doctor"]) == 1
+    assert "Hooks de Claude" in capsys.readouterr().out

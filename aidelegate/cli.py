@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import select
+import subprocess
 import sys
+import time
+from datetime import datetime
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -26,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "claude-statusline":
         from .claude_status import statusline_main
         return statusline_main(argv[1:])
+    if argv == ["pending", "--hook"]:
+        return pending_hook()
     args = parse(argv)
     try:
         if args.command == "doctor":
@@ -89,6 +97,8 @@ def _execute(args: argparse.Namespace, cfg: dict[str, Any], meta: RunMeta, run_d
         return _dry_run(meta, run_dir, runner, text, use_worktree)
     if use_worktree and root:
         _attach_worktree(meta, run_dir, root, source)
+    if not use_worktree:
+        runs.capture_start(meta)
     spec = replace(spec, directory=Path(meta.workdir))
     runs.add_event(meta, "assigned")
     session = _session(meta, run_dir, cfg, runner, args.timeout, args.max_fix_rounds)
@@ -241,6 +251,11 @@ def _continue(meta: RunMeta, run_dir: Path, cfg: dict[str, Any], text: str, labe
 
 
 def cmd_merge(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    with runs.state_lock():
+        return _merge(args, cfg)
+
+
+def _merge(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     meta, run_dir = _load(args.run)
     if not meta.worktree and not meta.branch and meta.mode == "write":
         _require_open(meta)
@@ -260,6 +275,11 @@ def cmd_merge(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 
 def cmd_discard(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    with runs.state_lock():
+        return _discard(args, cfg)
+
+
+def _discard(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     meta, run_dir = _load(args.run)
     if meta.worktree and meta.project_root:
         worktree.remove(Path(meta.project_root), Path(meta.worktree), meta.branch or "")
@@ -280,12 +300,104 @@ def cmd_show(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 
 def cmd_list(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    from .reconcile import reconcile
+    reconcile()
     rows = runs.recent(args.n)
     if not rows:
         print("Sin corridas todavía.")
     for meta in rows:
         task = meta.task.strip().splitlines()[0][:50] if meta.task.strip() else ""
         print(f"{meta.run_id:<48} {meta.status:<19} {meta.kind:<9} {task}")
+    return 0
+
+
+def _pending_rows() -> list[RunMeta]:
+    return sorted((m for m in runs.recent(1_000_000) if m.status in runs.PENDING),
+                  key=lambda m: m.updated_at)
+
+
+def _pending_line(meta: RunMeta, hook: bool = False) -> str:
+    since = datetime.fromisoformat(meta.updated_at).strftime("%H:%M")
+    task = meta.task.strip().splitlines()[0][:60] if meta.task.strip() else ""
+    if hook:
+        return f"- {meta.run_id} ({meta.status}, desde {since}): {task}"
+    return f"{meta.run_id}  {meta.status}  desde {since}  {task}"
+
+
+def cmd_pending(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    from .reconcile import reconcile
+    reconcile()
+    rows = _pending_rows()
+    if not rows:
+        print("sin corridas abiertas")
+    for repo in sorted({m.project_root or m.source_dir for m in rows}):
+        print(repo)
+        for meta in rows:
+            if (meta.project_root or meta.source_dir) == repo:
+                print(_pending_line(meta))
+    return 0
+
+
+def pending_hook() -> int:
+    # El proceso hijo permite imponer un presupuesto global aun con git lento.
+    try:
+        try:
+            fd = sys.stdin.fileno()
+        except (AttributeError, OSError, ValueError):
+            raw = sys.stdin.read(65537)
+        else:
+            chunks = []
+            deadline = time.monotonic() + .1
+            size = 0
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+                    return 0
+                chunk = os.read(fd, 65537 - size)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+                if size > 65536:
+                    return 0
+            raw = b"".join(chunks).decode()
+        data = json.loads(raw)
+        cwd = str(Path(data["cwd"]).resolve())
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
+        result = subprocess.run([sys.executable, "-c",
+                                "from aidelegate.cli import _pending_hook_output; import sys; sys.stdout.write(_pending_hook_output(sys.argv[1]))",
+                                cwd], capture_output=True, text=True, timeout=.75, check=True, env=env)
+        if result.stdout:
+            print(result.stdout, end="")
+    except Exception:
+        pass
+    return 0
+
+
+def _pending_hook_output(cwd: str) -> str:
+    from .reconcile import reconcile
+    path = Path(cwd)
+    result = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=path,
+                            capture_output=True, text=True, timeout=3)
+    root = Path(result.stdout.strip()).resolve() if result.returncode == 0 else path
+    reconcile()
+    rows = [m for m in _pending_rows() if any(Path(p).resolve() == root
+            for p in (m.project_root, m.source_dir) if p)][:5]
+    if not rows:
+        return ""
+    lines = ["ai-delegate: corridas abiertas en este proyecto. Revísalas y ciérralas con `ai-delegate merge <id>` o `discard <id>`:"]
+    lines.extend(_pending_line(m, True) for m in rows)
+    return "\n".join(lines) + "\n"
+
+
+def cmd_tidy(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
+    from .reconcile import reconcile
+    closed = reconcile()
+    for run_id, outcome, reason in closed:
+        print(f"{run_id} → {outcome}: {reason}")
+    if not closed:
+        print("nada que cerrar")
     return 0
 
 
@@ -359,6 +471,6 @@ def _require_open(meta: RunMeta) -> None:
 
 
 COMMANDS = {
-    "ui": cmd_ui, "run": cmd_run, "diff": cmd_diff, "feedback": cmd_feedback, "escalate": cmd_escalate,
+    "pending": cmd_pending, "tidy": cmd_tidy, "ui": cmd_ui, "run": cmd_run, "diff": cmd_diff, "feedback": cmd_feedback, "escalate": cmd_escalate,
     "merge": cmd_merge, "discard": cmd_discard, "show": cmd_show, "list": cmd_list, "stats": cmd_stats,
 }

@@ -185,8 +185,18 @@ def read_json(path: Path) -> dict:
         raise DelegateError(f"No puedo leer {path}: {exc}") from exc
 
 
-def hook_command() -> str:
-    return shlex.quote(str(Path.home() / ".local/bin/ai-delegate")) + " claude-status --from-hook"
+def hook_command(arguments: str = "claude-status --from-hook") -> str:
+    return shlex.quote(str(Path.home() / ".local/bin/ai-delegate")) + " " + arguments
+
+
+def _hook_args(command: str) -> str | None:
+    try:
+        parts = shlex.split(command)
+    except (ValueError, TypeError):
+        return None
+    if parts and (parts[0] == "ai-delegate" or parts[0].endswith("/ai-delegate")):
+        return " ".join(parts[1:])
+    return None
 
 
 def hooks(writer: Writer, enable: bool, yes: bool = True) -> None:
@@ -196,32 +206,36 @@ def hooks(writer: Writer, enable: bool, yes: bool = True) -> None:
     if not path.exists() and not confirm(f"¿Crear {path}?", yes):
         return
     data = read_json(path)
-    command = hook_command()
-    owned = {command, "ai-delegate claude-status --from-hook"}
+    template = json.loads((ROOT / "setup/claude-hooks.json").read_text())["hooks"]
+    owned = {_hook_args(h["command"]) for groups in template.values()
+             for group in groups for h in group["hooks"]}
     new, present, removed = 0, 0, 0
     if enable:
-        template = json.loads((ROOT / "setup/claude-hooks.json").read_text())
-        for event, groups in template["hooks"].items():
+        for event, groups in template.items():
             existing = data.setdefault("hooks", {}).setdefault(event, [])
-            count = sum(h.get("command") in owned for g in existing for h in g.get("hooks", []))
-            if count:
-                present += count
-                for g in existing:
-                    for h in g.get("hooks", []):
-                        if h.get("command") in owned:
-                            h["command"] = command
-                continue
             for group in groups:
+                missing = []
                 for h in group["hooks"]:
-                    h["command"] = command
-                existing.append(group)
-                new += len(group["hooks"])
+                    arguments = _hook_args(h["command"])
+                    matches = [item for g in existing for item in g.get("hooks", [])
+                               if _hook_args(item.get("command", "")) == arguments]
+                    if matches:
+                        present += len(matches)
+                        for item in matches:
+                            item.update(h, command=hook_command(arguments))
+                            if "async" not in h:
+                                item.pop("async", None)
+                    else:
+                        missing.append({**h, "command": hook_command(arguments)})
+                if missing:
+                    existing.append({**group, "hooks": missing})
+                    new += len(missing)
     else:
         for event, groups in data.get("hooks", {}).items():
             kept = []
             for group in groups:
                 original = group.get("hooks", [])
-                remaining = [h for h in original if h.get("command") not in owned]
+                remaining = [h for h in original if _hook_args(h.get("command", "")) not in owned]
                 removed += len(original) - len(remaining)
                 if remaining or not original:
                     kept.append({**group, "hooks": remaining})
@@ -454,7 +468,9 @@ def run_doctor(live: bool = False, cfg: dict | None = None, timeout_s: float = 1
         try:
             data = read_json(Path.home() / ".claude/settings.json")
             expected = json.loads((ROOT / "setup/claude-hooks.json").read_text())["hooks"]
-            ok = all(any(h.get("command") == hook_command() for g in data.get("hooks", {}).get(event, []) for h in g.get("hooks", [])) for event in expected)
+            ok = all(any(_hook_args(h.get("command", "")) == _hook_args(wanted["command"])
+                         for g in data.get("hooks", {}).get(event, []) for h in g.get("hooks", []))
+                     for event, groups in expected.items() for group in groups for wanted in group["hooks"])
         except DelegateError:
             ok = False
         check("Hooks de Claude", ok, "ejecuta setup")

@@ -10,6 +10,15 @@
             "async": true
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ai-delegate pending --hook",
+            "timeout": 3
+          }
+        ]
       }
     ],
     "PreToolUse": [

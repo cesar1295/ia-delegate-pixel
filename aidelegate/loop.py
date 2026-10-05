@@ -165,6 +165,7 @@ def agent_round(session: Session, text: str, label: str) -> AgentResult:
         result = _run_with_permission_retries(session, text, progress)
     finally:
         meta.subagents = []
+        runs.track_touched(meta)
         runs.save(meta, run_dir)
     if before is not None and before == diff_hash(meta):
         meta.status = "sin-cambios"

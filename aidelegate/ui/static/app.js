@@ -122,9 +122,8 @@
     info.append(heading);
     if (agent.detail) info.append(node('div','team-detail',agent.detail));
     if (agent.role === 'main' && agent.pending) {
-      // TODO(diseño): presentar .team-pending en --warn con IBM Plex Mono 11px.
       const hhmm = formatHHMM(agent.pending.since);
-      const pendingEl = node('button', 'team-pending', `⚠ escalada pendiente desde ${hhmm}: ${agent.pending.task}`);
+      const pendingEl = node('button', 'team-pending', `⚠ ${agent.pending_prefix || 'tarea escalada pendiente'} desde ${hhmm}: ${agent.pending.task}`);
       pendingEl.type = 'button';
       pendingEl.addEventListener('click', () => openDetail(agent.pending.run_id, pendingEl, agent.name));
       info.append(pendingEl);
@@ -240,7 +239,9 @@
     content.replaceChildren(node('div','detail-id',run.run_id || ''));
     const pills=node('div','detail-pills');pills.append(statusPill(run.status),pill(run.agent || '',
     accents[run.agent] || '--muted'),pill(run.kind || '','--muted'),pill(run.mode || '','--muted'));
-    content.append(pills,node('p','',run.repo || ''),node('p','',
+    content.append(pills);
+    if(run.closed_reason)content.append(node('p','closed-reason',`Cerrada sola: ${run.closed_reason}`));
+    content.append(node('p','',run.repo || ''),node('p','',
     `Checks: ${run.checks_ok === true ? 'ok' : run.checks_ok === false ? 'fallan' : 'sin checks'}`
     + ` · Correcciones: ${run.fix_rounds ?? 0}`));
     if (run.checks_ok == null) content.lastChild.classList.add('empty');
@@ -258,6 +259,36 @@
         catch {button.textContent='NO SE PUDO';button.classList.add('error');
           setTimeout(()=>{button.textContent='COPIAR';button.classList.remove('error');},1500);}
       });row.append(node('code','',command),button);content.append(row);
+    }
+    if(['listo-para-revisar','checks-fallidos','escalado-a-main','sin-cambios'].includes(run.status)) {
+      const row=node('div','command-row');
+      for(const outcome of (run.worktree ? ['descartado'] : ['integrado','descartado'])) {
+        const button=node('button','copy-button',outcome==='integrado' ? 'MARCAR INTEGRADA' : 'DESCARTAR');
+        button.type='button';
+        button.addEventListener('click',async()=>{
+          const message=outcome==='integrado'
+            ? `¿Marcar ${run.run_id} como integrada? Úsalo si ya guardaste los cambios tú.`
+            : run.worktree ? `¿Descartar ${run.run_id}? Se borra su worktree y la rama ai/${run.run_id} (los cambios se pierden).`
+            : `¿Descartar ${run.run_id}? Los cambios en la carpeta no se tocan.`;
+          if(!confirm(message))return;
+          const request=modalRequest;
+          row.querySelectorAll('button').forEach(item=>item.disabled=true);
+          try {
+            const token=document.querySelector('meta[name="ai-delegate-token"]')?.content || '';
+            const response=await fetch(`/api/run/${encodeURIComponent(run.run_id)}/close`,{
+              method:'POST',headers:{'Content-Type':'application/json','X-AI-Delegate-Token':token},
+              body:JSON.stringify({outcome,confirm:true})});
+            const updated=await response.json();
+            if(!response.ok)throw new Error(updated.error || `HTTP ${response.status}`);
+            if(request===modalRequest)detailView(updated);
+          } catch(error) {
+            row.querySelectorAll('button').forEach(item=>item.disabled=false);
+            if(request===modalRequest)content.append(node('p','error',error.message));
+          }
+        });
+        row.append(button);
+      }
+      content.append(row);
     }
   }
   async function openDetail(id,trigger,agent) {

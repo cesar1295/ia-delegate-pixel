@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from . import config, detect, install, quota, routing, runs, stats, worktree
+from . import reconcile, config, detect, install, quota, routing, runs, stats, worktree
 from .errors import DelegateError
 from .ui_state import build_state
 
@@ -160,6 +160,7 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(urlsplit(self.path).path)
         try:
             if path == "/api/state":
+                reconcile.background()
                 cfg = config.load()
                 self._json(build_state(runs.recent(1_000_000), _claude_status(), stats.read_rows(), datetime.now(),
                                        max_fix_rounds=cfg["limits"]["max_fix_rounds"], cfg=cfg))
@@ -255,7 +256,9 @@ class Handler(BaseHTTPRequestHandler):
 
         path = unquote(urlsplit(self.path).path)
         try:
-            if path == "/api/config":
+            if path.startswith("/api/run/") and path.endswith("/close"):
+                self._post_close(path[len("/api/run/"):-len("/close")], body)
+            elif path == "/api/config":
                 self._post_config(body)
             elif path == "/api/permissions":
                 self._post_permissions(body)
@@ -269,6 +272,29 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(exc)}, 400)
         except Exception as exc:
             self._json({"error": f"Error procesando petición: {exc}"}, 500)
+
+    def _post_close(self, ref: str, body: dict) -> None:
+        if not isinstance(body, dict) or body.get("confirm") is not True or body.get("outcome") not in ("integrado", "descartado"):
+            self._json({"error": "Falta confirm o outcome inválido"}, 400)
+            return
+        if not ref or ref in {".", ".."} or "/" in ref or "\\" in ref:
+            raise DelegateError("Id de corrida inválido")
+        if not (config.runs_dir() / ref / "meta.json").is_file():
+            self._json({"error": "Corrida inexistente"}, 404)
+            return
+        with runs.state_lock():
+            meta = runs.load(config.runs_dir() / ref)
+            outcome = body["outcome"]
+            if meta.status not in reconcile.OPEN:
+                self._json({"error": "La corrida no está abierta"}, 409)
+                return
+            if outcome == "integrado" and meta.worktree:
+                self._json({"error": "intégrala desde la terminal con merge"}, 409)
+                return
+            if outcome == "descartado" and meta.worktree and meta.project_root:
+                worktree.remove(Path(meta.project_root), Path(meta.worktree), meta.branch or "")
+            reconcile.close(meta, outcome, "cerrada-desde-oficina")
+        self._json(run_detail(ref))
 
     def _post_permissions(self, body: dict) -> None:
         if not isinstance(body, dict):
