@@ -9,10 +9,25 @@ que regrese mal.
 
 {{agents_table}}
 
+## A quién delegar: lo decide {{main_display}} por tarea
+
+Indica siempre el agente con `--to <agente>` (no uses la tabla automática). Criterios:
+
+**agy** solo si se cumple todo: alcance chico y claro (1–3 archivos, sin cambios transversales); especificación
+cerrada (qué archivos y qué resultado, sin decisiones abiertas); riesgo bajo (sin seguridad, dinero, concurrencia,
+migraciones ni estado complejo); y verificable con tests o un check objetivo. Ejemplos: un componente o endpoint
+sencillo desde una especificación, validaciones, renombres, tests, docs, datos de prueba, traducciones.
+
+**Codex** si aplica cualquiera: varios módulos o más de ~3 archivos, refactor o arquitectura, bug difícil, rendimiento,
+integración entre partes, estado complejo, o una especificación que requiere criterio. Si dudas, Codex.
+
+`ai-delegate stats` muestra la aceptación a la primera por agente y tipo: si agy falla seguido en un tipo, deja de
+dárselo. El escalamiento automático (agy → Codex tras 2 correcciones → maestra) es la red de seguridad.
+
 ## Cómo delegar
 
 1. Para tareas con alcance claro, escribe una especificación corta (qué, dónde, criterios de aceptación) y corre
-   `ai-delegate --kind <feature|bugfix|test|docs|...> --dir <repo> "<especificación>"`, o `--task-file spec.md`.
+   `ai-delegate --to <agente> --kind <feature|bugfix|test|docs|...> --dir <repo> "<especificación>"`, o `--task-file spec.md`.
 2. Lee solo el resumen. Revisa con `ai-delegate diff <id> --stat` y luego el diff de los archivos que importen.
 3. Si está mal, `ai-delegate feedback <id> "<correcciones concretas>"` (máx. 2 rondas) y luego `escalate <id>`.
    Si llega a ti (código de salida 3), termínalo en el worktree que indica.

@@ -16,14 +16,14 @@ from .errors import DelegateError
 
 DEFAULTS: dict[str, Any] = {
     "strategy": {
-        "mode": "agy-first",
+        "mode": "routing",
         "programmer_kinds": [
             "feature", "bugfix", "refactor", "api", "design", "test",
             "docs", "mock", "i18n", "chore",
         ],
         "first": "agy",
         "then": "codex",
-        "escalate_after": 3,
+        "escalate_after": 2,
         "quota_floor_pct": 15,
     },
     "ui": {

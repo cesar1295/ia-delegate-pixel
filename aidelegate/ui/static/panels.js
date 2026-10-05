@@ -42,10 +42,9 @@
     }
     fakeConfig() {
       return {main: this.api.agents().find(a => a.role === 'main')?.name || 'claude', user_name: 'Alex',
-        ui: {time_mode: 'auto', fixed_hour: 12}, strategy: {mode: 'agy-first', first: 'agy', then: 'codex',
-          escalate_after: 3, quota_floor_pct: 15},
+        ui: {time_mode: 'auto', fixed_hour: 12}, strategy: {mode: 'routing', first: 'agy', then: 'codex',
+          escalate_after: 2},
         limits: {max_fix_rounds: 3, max_review_rounds: 2, timeout_min: 30, keep_days: 7},
-        routing: {feature: 'codex', bugfix: 'codex', test: 'agy', docs: 'agy', security: 'main'},
         agents: Object.fromEntries(this.api.agents().map(a => [a.name,
           {display: a.display, color: a.color, enabled: true, model: '', daily_token_budget: 0,
            type: a.type || a.name,
@@ -74,7 +73,6 @@
           if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         }
         this.config = data.config;
-        this.kinds = data.kinds || Object.keys(this.config.routing || {});
         this.catalog = data.catalog || data.agy_catalog || {
           lectura: ["ls", "tree", "pwd", "cat", "head", "tail", "wc", "grep", "git status", "git log", "git diff", "git show", "git ls-files", "git grep", "git blame", "git rev-parse"],
           pruebas: ["npm test", "npm run test", "npm run lint", "npm run typecheck", "pnpm test", "pnpm run lint", "yarn test", "yarn lint", "pytest", "python3 -m pytest", "python -m pytest"],
@@ -184,7 +182,6 @@
         }
       }
       const agentChoices = agents.map(([name, a]) => [name, a.display || name]);
-      const choices = agentChoices.filter(([name]) => name !== master);
       const masterSection = this.section('IA maestra');
       for (const [name, agent] of detectedAgents) {
         const detected = this.detected.find(d => d.name === name);
@@ -211,14 +208,12 @@
         }
         masterSection.append(card);
       }
-      const distribution = this.section('Reparto');
-      this.field(distribution, 'Estrategia', 'strategy.mode', 'select',
-        {default: 'agy-first', choices: [['agy-first', 'Agy primero'], ['routing', 'Por tipo de tarea']]});
-      this.field(distribution, 'Programa primero', 'strategy.first', 'select', {choices: agentChoices});
-      this.field(distribution, 'Si no puede', 'strategy.then', 'select', {choices: agentChoices});
+      const distribution = this.section('Escalamiento');
+      distribution.append(node('p', 'permissions-help',
+        'La IA maestra decide a qué agente va cada tarea según su complejidad. Aquí defines a quién pasa si un agente no la resuelve.'));
+      this.field(distribution, 'Primer agente de la cadena', 'strategy.first', 'select', {choices: agentChoices});
+      this.field(distribution, 'Si no lo resuelve, pasa a', 'strategy.then', 'select', {choices: agentChoices});
       this.field(distribution, 'Correcciones antes de escalar', 'strategy.escalate_after', 'number', {min: 1, max: 10});
-      this.field(distribution, 'Cambiar de agente si la cuota baja de', 'strategy.quota_floor_pct', 'number',
-        {default: 15, min: 0, max: 90, suffix: '%'});
       const agentSection = this.section('Agentes');
       for (const [name, agent] of agents.filter(([name]) => name !== master)) {
         const card = node('div', 'settings-card');
@@ -234,18 +229,6 @@
           `agents.${name}.daily_token_budget`, 'number', {min: 0, default: 0});
         this.renderPermissions(card, name, agent);
       }
-      const kinds = this.section('Tipos de tarea'), table = node('table'), body = node('tbody');
-      const head = node('thead'), row = node('tr');
-      row.append(node('th', '', 'tipo'), node('th', '', 'agente'));
-      head.append(row);
-      for (const kind of this.kinds || Object.keys(this.config.routing || {})) {
-        const row = node('tr'), control = node('td');
-        row.append(node('td', '', kind), control);
-        this.field(control, kind, `routing.${kind}`, 'select', {choices: [...choices, ['main', 'Maestra']]});
-        body.append(row);
-      }
-      table.append(head, body);
-      kinds.append(table);
       const limits = this.section('Límites');
       this.field(limits, 'Minutos por ronda', 'limits.timeout_min', 'number', {min: 1, max: 240});
       this.field(limits, 'Rondas de revisión', 'limits.max_review_rounds', 'number', {min: 1, max: 10});

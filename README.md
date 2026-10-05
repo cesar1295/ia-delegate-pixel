@@ -59,19 +59,19 @@ Tú solo hablas con la jefa. Ella reparte el trabajo, lo revisa y te avisa cuand
 Imagina que le pides a la jefa: *"agrega un buscador a mi tienda en línea"*.
 
 1. **La jefa escribe una orden de trabajo** con lo que hay que hacer y cómo saber que quedó bien.
-2. **Camina al escritorio de agy y se la entrega** (¡lo ves en la oficina!). agy va primero para repartir el gasto
-   entre tus suscripciones.
-3. **agy trabaja en una copia aparte de tu proyecto.** Tu versión original no se toca.
-4. **Se revisa automáticamente.** Si tu proyecto tiene pruebas, se ejecutan solas. Si algo falla, agy recibe el
+2. **La jefa elige quién lo hace:** si es algo simple y bien delimitado, se lo da a **agy**; si es complejo, a
+   **Codex**. Luego camina a su escritorio y le entrega la orden (¡lo ves en la oficina!).
+3. **La programadora trabaja en una copia aparte de tu proyecto.** Tu versión original no se toca.
+4. **Se revisa automáticamente.** Si tu proyecto tiene pruebas, se ejecutan solas. Si algo falla, recibe el
    error y lo corrige.
-5. **Si agy no puede después de 3 intentos, pasa a Codex**, y si Codex tampoco, a la jefa.
+5. **Si agy no puede después de 2 intentos, pasa a Codex**, y si Codex tampoco, a la jefa.
 6. **agy (o Codex) camina a la oficina de la jefa y le entrega el trabajo.** La jefa lo revisa:
    - ✅ Si está bien, lo integra a tu proyecto.
    - ✏️ Si le falta algo, se lo regresa con correcciones precisas.
    - 🗑️ Si no sirve, lo descarta.
 
 ```
-   Tú ──pides──▶ 👩‍💼 Jefa ──orden──▶ 👩‍💻 agy ──(3 intentos)──▶ 👩‍💻 Codex ──▶ 👩‍💼 Jefa
+   Tú ──pides──▶ 👩‍💼 Jefa ──orden──▶ 👩‍💻 agy ──(2 intentos)──▶ 👩‍💻 Codex ──▶ 👩‍💼 Jefa
                      ▲                    │                        │
                      └──────── entrega ───┴────────────────────────┘
                      revisa ▶ ✅ integra / ✏️ corrige / 🗑️ descarta
@@ -229,7 +229,7 @@ ai-delegate --dir ~/mi-proyecto "agrega validación al formulario de contacto"
 - **Equipo:** estado, cuota, tokens usados y **tiempo de trabajo** de cada IA.
 - **Tareas:** las tareas recientes. Haz clic en una para ver el resumen y los comandos para revisarla.
 - **Aceptación:** qué porcentaje de trabajo aprueba cada IA a la primera, y su tiempo total.
-- **Ajustes:** cambia la jefa, tu nombre, quién programa primero, cuántas correcciones antes de pasar a otra IA, los
+- **Ajustes:** cambia la jefa, tu nombre, a quién pasa una tarea si una IA no la resuelve, cuántas correcciones antes de pasarla, los
   **permisos** de cada IA y prueba las conexiones. Todo sin tocar archivos.
 
 **Verla al lado de tu editor:**
@@ -289,7 +289,7 @@ Ejecuta `ai-delegate doctor`: cada ✗ explica cómo arreglarlo.
 Maestra (Claude/Codex/agy)
    │  ai-delegate run --kind feature "spec"
    ▼
-routing ──► pick_programmer (agy-first + piso de cuota) ──► runner (codex | agy | claude | generic)
+--to elegido por la maestra (o routing) ──► runner (codex | agy | claude | generic)
    │                                                            │ subproceso con entorno limpio
    ▼                                                            ▼
 worktree git aislado (rama ai/<id>) ◄──── el agente edita ────  stream JSON → events.jsonl
@@ -304,7 +304,7 @@ reporte corto ──► la maestra revisa ──► feedback | escalate | merge 
 | Módulo | Responsabilidad |
 |---|---|
 | `cli.py`, `args.py` | Comandos y argumentos |
-| `routing.py`, `escalation.py` | A quién va cada tarea, estrategia agy-first, cadena de escalamiento |
+| `routing.py`, `escalation.py` | A quién va cada tarea, estrategias routing / agy-first, cadena de escalamiento |
 | `runners/` | Un runner por CLI: `codex exec --json`, `agy -p --output-format stream-json`, `claude -p --output-format stream-json`, y `generic` (texto plano) |
 | `loop.py` | Ronda del agente → checks → correcciones → escalamiento; reintento si a agy le niegan un permiso |
 | `worktree.py` | Worktrees aislados, diff, merge, enlaza `node_modules`/`.venv` |
@@ -320,13 +320,14 @@ reporte corto ──► la maestra revisa ──► feedback | escalate | merge 
 
 ### Reparto por defecto
 
-- **Estrategia `agy-first`:** los tipos de programación (`feature`, `bugfix`, `refactor`, `api`, `design`, `test`,
-  `docs`, `mock`, `i18n`, `chore`) van a **agy**; si su cuota conocida baja de 15% o tuvo `cuota-agotada` en la
-  última hora, van a **Codex**.
-- **Escalamiento automático:** tras **3 correcciones** (checks fallidos + rondas de revisión) pasa al siguiente:
+- **La maestra decide** a qué agente va cada tarea (`--to`): agy solo para tareas simples y bien delimitadas
+  (son las que resuelve en pocas rondas); Codex para lo complejo o ambiguo. Los criterios exactos se instalan en
+  las instrucciones de la maestra (`setup/instructions.md`).
+- **Escalamiento automático:** tras **2 correcciones** (checks fallidos + rondas de revisión) pasa al siguiente:
   `agy → codex → maestra`, en el mismo worktree.
-- **Lectura:** `review` → codex; `research`, `summarize` → agy. `security` → siempre la maestra.
-- Modo `routing` (en Ajustes) usa la tabla `routing` de la config en lugar de agy-first.
+- **Sin `--to`** se usa la tabla `routing` de la config (programación → codex; tests, docs, datos de prueba,
+  i18n, tareas mecánicas, investigación y resúmenes → agy; `security` → siempre la maestra). La estrategia
+  alternativa `agy-first` sigue disponible en la config (`strategy.mode`).
 
 ### Diseño: la maestra especifica, los agentes implementan
 

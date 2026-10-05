@@ -21,9 +21,17 @@ FAKES = Path(__file__).parent / "fakes"
 
 
 # --- 1. Estrategia y pick_programmer -----------------------------------------
+ 
+def test_strategy_defaults_and_instructions_template():
+    assert config.DEFAULTS["strategy"]["mode"] == "routing"
+    assert config.DEFAULTS["strategy"]["escalate_after"] == 2
+    instructions = (Path(__file__).parent.parent / "setup/instructions.md").read_text()
+    assert "## A quién delegar" in instructions
+
 
 def test_pick_programmer_agy_default():
     cfg = copy.deepcopy(config.DEFAULTS)
+    cfg["strategy"]["mode"] = "agy-first"
     now = datetime(2026, 10, 4, 15, 0, 0)
     agent, reason = routing.pick_programmer(cfg, {}, {}, now)
     assert agent == "agy"
@@ -32,6 +40,7 @@ def test_pick_programmer_agy_default():
 
 def test_pick_programmer_codex_when_agy_under_quota_floor():
     cfg = copy.deepcopy(config.DEFAULTS)
+    cfg["strategy"]["mode"] = "agy-first"
     now = datetime(2026, 10, 4, 15, 0, 0)
     quotas = {"agy": 10, "codex": 80}
     agent, reason = routing.pick_programmer(cfg, quotas, {}, now)
@@ -41,6 +50,7 @@ def test_pick_programmer_codex_when_agy_under_quota_floor():
 
 def test_pick_programmer_codex_when_agy_exhausted_30_min_ago():
     cfg = copy.deepcopy(config.DEFAULTS)
+    cfg["strategy"]["mode"] = "agy-first"
     now = datetime(2026, 10, 4, 15, 0, 0)
     recent = {"agy": ("cuota-agotada", now - timedelta(minutes=30))}
     agent, reason = routing.pick_programmer(cfg, {}, recent, now)
@@ -50,6 +60,7 @@ def test_pick_programmer_codex_when_agy_exhausted_30_min_ago():
 
 def test_pick_programmer_agy_when_exhausted_2_hours_ago():
     cfg = copy.deepcopy(config.DEFAULTS)
+    cfg["strategy"]["mode"] = "agy-first"
     now = datetime(2026, 10, 4, 15, 0, 0)
     recent = {"agy": ("cuota-agotada", now - timedelta(hours=2))}
     agent, reason = routing.pick_programmer(cfg, {}, recent, now)
@@ -68,7 +79,7 @@ def test_pick_programmer_mode_routing_respects_routing():
 
 def test_read_kinds_unaffected_by_strategy():
     cfg = copy.deepcopy(config.DEFAULTS)
-    assert cfg["strategy"]["mode"] == "agy-first"
+    cfg["strategy"]["mode"] = "agy-first"
     assert routing.resolve_target("auto", "review", cfg) == "codex"
     assert routing.resolve_target("auto", "research", cfg) == "agy"
     assert routing.resolve_target("auto", "summarize", cfg) == "agy"
