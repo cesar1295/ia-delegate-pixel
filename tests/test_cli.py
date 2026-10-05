@@ -76,7 +76,7 @@ def test_failed_checks_go_back_to_agent_automatically(home, repo):
     assert run("--dir", str(repo), "--check", "test -f hecho.txt", "FALLA_PRIMERO crea hecho.txt") == 0
     meta = last_meta()
     assert meta.fix_rounds == 1 and meta.last_check["ok"]
-    assert [h["label"] for h in meta.history] == ["tarea", "corrección 1"]
+    assert [h["label"] for h in meta.history] == ["tarea", "corrección 1", "pre-revisión"]
 
 
 def test_checks_still_failing_after_limit(home, repo):

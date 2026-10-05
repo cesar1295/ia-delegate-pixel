@@ -8,7 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from . import checks, config, escalation, loop, prompt, report, routing, runners, runs, stats, worktree
+from . import acceptance, checks, config, escalation, loop, prompt, report, routing, runners, runs, stats, worktree
 from .args import parse, parse_duration
 from .errors import DelegateError, SecretFound
 from .runners import AgentResult, Runner
@@ -65,11 +65,11 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
         runner.ensure_available()
     root = worktree.repo_root(source)
     # En disco y hacia el agente solo va la versión limpia de la tarea.
-    safe_task = sanitize(task, source="la tarea", on_secret="redact")
+    safe_task = sanitize(task, source="la tarea", on_secret="redact", mask_personal=False)
     meta = _new_meta(agent, mode, kind, safe_task, source, root, args.resume, reason)
     run_dir = runs.create(meta)
     try:
-        sanitize(task, source="la tarea")  # bloquea si trae secretos
+        sanitize(task, source="la tarea", mask_personal=False)  # bloquea si trae secretos
         return _execute(args, cfg, meta, run_dir, runner)
     except BaseException as exc:
         _record_failure(meta, run_dir, exc)
@@ -79,7 +79,8 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 def _execute(args: argparse.Namespace, cfg: dict[str, Any], meta: RunMeta, run_dir: Path, runner: Runner) -> int:
     source, root = Path(meta.source_dir), worktree.repo_root(Path(meta.source_dir))
     spec = _prompt_spec(args, meta, source)
-    sanitize(prompt.compose(spec), source="el prompt")  # bloquea antes de crear nada
+    meta.no_review = args.no_review
+    sanitize(prompt.compose(spec), source="el prompt", mask_personal=False)  # bloquea antes de crear nada
     if meta.mode == "write":
         meta.check_cmd = checks.resolve(args.check, source, root or source, cfg)
     use_worktree = _wants_worktree(args, meta, root)
@@ -110,7 +111,7 @@ def _attempt(session: loop.Session, cfg: dict[str, Any], model: str | None, name
         meta.fallback_from, meta.agent, meta.thread_id = meta.agent, name, None
         runs.add_event(meta, "assigned", meta.fallback_from)
     text = prompt.compose(replace(spec, agent_hint=session.runner.prompt_hint))
-    return loop.drive(session, sanitize(text, source="el prompt"), "tarea")
+    return loop.drive(session, sanitize(text, source="el prompt", mask_personal=False), "tarea")
 
 
 def _new_meta(agent: str, mode: str, kind: str, task: str, source: Path, root: Path | None, resume: str | None,
@@ -130,7 +131,11 @@ def _prompt_spec(args: argparse.Namespace, meta: RunMeta, source: Path) -> promp
     if args.design_spec:
         path = Path(args.design_spec).expanduser().resolve()
         design, meta.design_spec_path = prompt.read_context_file(path), str(path)
-    return prompt.PromptSpec(meta.task, meta.mode, source, meta.kind, issue, context, design_spec=design)
+    criteria = acceptance.collect(meta.task, " ".join(args.task) if args.task_file else "", design or "", extra=args.accept)
+    meta.acceptance_criteria = [sanitize(item, source="los criterios de aceptación", on_secret="redact", mask_personal=False) for item in criteria]
+    sanitize("\n".join(criteria), source="los criterios de aceptación", mask_personal=False)
+    return prompt.PromptSpec(meta.task, meta.mode, source, meta.kind, issue, context, design_spec=design,
+                             acceptance_criteria=tuple(meta.acceptance_criteria))
 
 
 def _require_design_spec(args: argparse.Namespace, kind: str, cfg: dict[str, Any]) -> None:
@@ -213,7 +218,7 @@ def cmd_feedback(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
             f"Ya van {meta.review_rounds} rondas de revisión con {meta.agent}. "
             f"Escala con 'ai-delegate escalate {meta.run_id}' o usa --force."
         )
-    text = sanitize(" ".join(args.text), source="el feedback")
+    text = sanitize(" ".join(args.text), source="el feedback", mask_personal=False)
     meta.review_rounds += 1
     meta.feedback.append(text)
     runs.add_event(meta, "feedback")

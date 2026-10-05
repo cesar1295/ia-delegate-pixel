@@ -45,6 +45,11 @@ class RunMeta:
     design_spec_path: str | None = None
     check_cmd: str | None = None
     last_check: dict[str, Any] | None = None
+    acceptance_criteria: list[str] = field(default_factory=list)
+    acceptance: dict | None = None
+    visual: dict | None = None
+    prereview: dict | None = None
+    no_review: bool = False
     diffstat: str | None = None
     fix_rounds: int = 0
     review_rounds: int = 0

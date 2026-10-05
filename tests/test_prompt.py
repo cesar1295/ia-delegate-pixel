@@ -60,3 +60,13 @@ def test_escalation_keeps_design_spec():
 def test_escalation_carries_feedback():
     text = prompt.compose_escalation("tarea", "agy", ["falta manejar null"], "2 files changed")
     assert "antes la tenía agy" in text and "falta manejar null" in text and "2 files changed" in text
+
+
+def test_github_issue_masks_external_email(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    monkeypatch.setattr(prompt.shutil, 'which', lambda name: '/bin/gh')
+    monkeypatch.setattr(prompt.subprocess, 'run', lambda *a, **kw: SimpleNamespace(
+        returncode=0, stdout=json.dumps({'number': 1, 'title': 'Contacto', 'body': 'external@example.com'})))
+    result = prompt.fetch_issue('1', tmp_path)
+    assert '[CORREO]' in result and 'external@example.com' not in result

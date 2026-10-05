@@ -263,8 +263,9 @@ Las programadoras trabajan en una copia aparte. Tu proyecto solo cambia cuando l
 eso queda como un commit normal que puedes deshacer.
 
 **¿Ve mis contraseñas?**
-La herramienta **bloquea** el envío de textos que parezcan contraseñas o llaves y reemplaza correos, teléfonos y
-tarjetas por marcadores. Nunca lee ni guarda las sesiones de las IAs. Ojo: las IAs sí pueden leer los archivos de tu
+La herramienta **bloquea** el envío de textos que parezcan contraseñas o llaves. Conserva los datos personales
+de la tarea, la especificación, el contexto y el feedback escritos por la maestra; reemplaza correos, teléfonos y
+tarjetas por marcadores en las salidas externas e issues de GitHub. Nunca lee ni guarda las sesiones de las IAs. Ojo: las IAs sí pueden leer los archivos de tu
 proyecto (por ejemplo un `.env`), así que no guardes secretos en el proyecto.
 
 **¿Qué pueden hacer las IAs en mi computadora?**
@@ -351,7 +352,7 @@ diseño, el agente tiene prohibido tocar estilos.
 
 - **Entorno limpio:** el subproceso solo hereda `PATH`, `HOME`, `LANG` y similares; ninguna llave del entorno.
 - **Bloqueo de secretos** antes de enviar texto a un proveedor (`sk-…`, `ghp_…`, `*_TOKEN=…`, `Bearer …`, llaves
-  privadas) y enmascarado de correos, teléfonos y tarjetas (Luhn).
+  privadas) y enmascarado de correos, teléfonos y tarjetas (Luhn) en salidas externas e issues de GitHub.
 - **Aislamiento:** worktree propio por tarea; Codex con sandbox `workspace-write` (sin red por defecto); agy en
   `accept-edits` sin saltarse permisos, con lista blanca de comandos de lectura y lista negra fija (`rm`, `sudo`,
   `git push/commit/reset/checkout/clean`).
@@ -414,3 +415,37 @@ python3 tools/gen_office.py aidelegate/ui/static/office.js
 
 [MIT](LICENSE): puedes usar, copiar, modificar y distribuir este proyecto libremente, incluso con fines
 comerciales, siempre que conserves el aviso de copyright y la licencia.
+
+### Verificación antes de entregar
+
+En modo escritura cada ronda pasa por cuatro etapas, en este orden: checks del proyecto,
+criterios de aceptación, revisión visual y pre-revisión del código. Los fallos vuelven al agente
+con el mismo contador de correcciones y escalamiento; solo después queda listo para revisar.
+Los bloques `acceptance` de la tarea, `--task-file` y `--design-spec` se combinan con las opciones
+repetibles `--accept`. Admiten `cmd:`, `contains: ruta :: texto`, `not-contains: ruta :: texto` y
+`exists: ruta`. Se validan antes de llamar al agente y dejan `acceptance.log`.
+
+La revisión visual aplica a cambios web con servidor disponible: detecta scripts `dev`/`preview`
+o un `index.html`, y captura escritorio y móvil. Requiere Node ≥22 y Chromium; si faltan, se omite.
+Cada proyecto puede definir `preview` con `{port}` y `preview_paths` (por defecto `["/"]`):
+
+```toml
+[projects."/ruta/al/repo"]
+preview = "npm run dev -- --port {port}"
+preview_paths = ["/", "/productos"]
+```
+
+La pre-revisión usa el runner normal en una conversación de lectura independiente y solo señala problemas reales
+del diff contra la base, incluido en el prompt con un límite de 80 KB y aviso si se recorta. Al agotar las rondas entrega los problemas a la maestra; un fallo del revisor se reporta
+como omitido. Se configura así y puede desactivarse por corrida con `--no-review`:
+
+```toml
+[review]
+enabled = true
+agent = "codex"
+block_on = ["grave", "medio"]
+max_rounds = 2
+```
+
+El reporte incluye aceptación, capturas/errores y severidades de revisión; las salidas quedan
+en `acceptance.log`, `preview.log`, `screens/` y `review.md` dentro de la corrida.

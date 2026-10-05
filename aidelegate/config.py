@@ -50,6 +50,7 @@ DEFAULTS: dict[str, Any] = {
         "research": "agy",
         "image": "agy",
     },
+    "review": {"enabled": True, "agent": "codex", "block_on": ["grave", "medio"], "max_rounds": 2},
     "default_kind": "feature",
     "spec_required_kinds": ["design"],
     "read_kinds": ["review", "research", "summarize"],

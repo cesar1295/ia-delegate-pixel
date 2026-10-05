@@ -31,3 +31,14 @@
 [agents.claude]
 # bin = "auto"            # detecta también Claude Desktop
 # model = ""
+
+[review]
+enabled = true
+agent = "codex"
+block_on = ["grave", "medio"]
+max_rounds = 2
+
+# Preview de este repo (ajusta la ruta):
+# [projects."/home/tu-usuario/proyectos/ai-delegate"]
+# preview = "python3 ai_delegate.py ui --no-open --port {port}"
+# preview_paths = ["/?demo=1"]

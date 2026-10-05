@@ -72,6 +72,8 @@ def _add_run(sub: argparse._SubParsersAction) -> None:
                                            "(obligatoria con --kind design; ver templates/design-spec.md)")
     run.add_argument("--worktree", action=argparse.BooleanOptionalAction, default=None,
                      help="worktree aislado (por defecto sí en modo write dentro de un repo git)")
+    run.add_argument("--accept", action="append", default=[])
+    run.add_argument("--no-review", action="store_true")
     run.add_argument("--check", default="auto", help="comando de checks, 'auto' (detecta) o 'none'")
     run.add_argument("--max-fix-rounds", type=int, help="correcciones automáticas si fallan los checks")
     run.add_argument("--timeout", help="límite por ronda: 90s, 20m, 1h (número solo = minutos)")
