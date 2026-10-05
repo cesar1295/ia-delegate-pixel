@@ -44,6 +44,17 @@
     }
     return String(num);
   }
+  function formatHHMM(ts) {
+    if (!ts) return '';
+    try {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) {
+        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      }
+    } catch {}
+    const match = String(ts).match(/T?(\d{2}:\d{2})/);
+    return match ? match[1] : '';
+  }
   function sprite(context, rows, palette, x, y, factor = 1) {
     rows.forEach((row, ry) => [...row].forEach((pixel, rx) => {
       if (pixel !== '.' && palette[pixel]) {
@@ -110,6 +121,14 @@
     heading.append(title,pill(stateLabels[safeState(name)],stateColor(safeState(name))));
     info.append(heading);
     if (agent.detail) info.append(node('div','team-detail',agent.detail));
+    if (agent.role === 'main' && agent.pending) {
+      // TODO(diseño): presentar .team-pending en --warn con IBM Plex Mono 11px.
+      const hhmm = formatHHMM(agent.pending.since);
+      const pendingEl = node('button', 'team-pending', `⚠ escalada pendiente desde ${hhmm}: ${agent.pending.task}`);
+      pendingEl.type = 'button';
+      pendingEl.addEventListener('click', () => openDetail(agent.pending.run_id, pendingEl, agent.name));
+      info.append(pendingEl);
+    }
     info.append(quotaBar(agent));
     const timeText = (!agent.time || agent.time.today_s == null)
       ? '⏱ sin dato'

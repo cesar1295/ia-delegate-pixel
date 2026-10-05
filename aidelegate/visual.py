@@ -62,6 +62,14 @@ def run(meta, run_dir: Path, cfg: dict) -> dict:
     info = dict(status='omitida', shots=[], errors=0, note='sin cambios web o sin servidor de preview')
     if not applies((proc.stdout + '\n' + new.stdout).splitlines()) or not command:
         return info
+    node_modules = cwd / 'node_modules'
+    try:
+        has_nm = node_modules.is_dir() and any(node_modules.iterdir())
+    except OSError:
+        has_nm = False
+    if (cwd / 'package.json').is_file() and not has_nm:
+        info['note'] = 'faltan dependencias: corre npm install (o pnpm/yarn) en el proyecto'
+        return info
     node, browser = tools_available()
     if not node or not browser:
         info['note'] = 'falta node 22 o navegador'
@@ -74,15 +82,29 @@ def run(meta, run_dir: Path, cfg: dict) -> dict:
             server = subprocess.Popen(['bash', '-c', command.replace('{port}', str(port))], cwd=cwd,
                                       env={**os.environ, 'PORT': str(port)}, stdout=log, stderr=log, start_new_session=True)
             deadline = time.monotonic() + 60
+            server_ok = False
             for path in paths:
                 while True:
+                    if hasattr(server, 'poll') and server.poll() is not None:
+                        break
                     try:
                         with urllib.request.urlopen(f'http://127.0.0.1:{port}{path}', timeout=1):
                             break
                     except (OSError, ValueError):
-                        if time.monotonic() >= deadline:
-                            raise RuntimeError('preview no respondió en 60 s\n' + '\n'.join((run_dir / 'preview.log').read_text().splitlines()[-40:]))
+                        if (hasattr(server, 'poll') and server.poll() is not None) or time.monotonic() >= deadline:
+                            break
                         time.sleep(.2)
+                if (hasattr(server, 'poll') and server.poll() is not None) or time.monotonic() >= deadline:
+                    break
+            else:
+                server_ok = True
+            if not server_ok:
+                log.flush()
+                log_lines = (run_dir / 'preview.log').read_text(errors='replace').strip().splitlines()[-3:]
+                tail = '\n'.join(log_lines)
+                note = f"no se pudo levantar el proyecto:\n{tail}" if '\n' in tail else f"no se pudo levantar el proyecto: {tail}".strip()
+                info.update(status='omitida', note=sanitize(note, source='la vista', on_secret='redact'))
+                return info
             capture = subprocess.Popen([node, str(Path(__file__).with_name('visual_cdp.mjs')), browser,
                                       str(port), str(run_dir.resolve()), json.dumps(paths)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
             try:
@@ -100,16 +122,27 @@ def run(meta, run_dir: Path, cfg: dict) -> dict:
                         errors=len(result['errors']), note=sanitize('\n'.join(str(e) for e in result['errors'][:20]),
                                                                   source='la vista', on_secret='redact'))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
-        info.update(status='fallo', note=sanitize(str(exc), source='la vista', on_secret='redact'))
+        info.update(status='omitida', note=sanitize(str(exc), source='la vista', on_secret='redact'))
     finally:
         if server:
             try:
                 os.killpg(server.pid, signal.SIGTERM)
-                server.wait(timeout=5)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            try:
+                if hasattr(server, 'wait'):
+                    server.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                os.killpg(server.pid, signal.SIGKILL)
-                server.wait()
-            except ProcessLookupError:
+                try:
+                    os.killpg(server.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+                try:
+                    if hasattr(server, 'wait'):
+                        server.wait()
+                except OSError:
+                    pass
+            except OSError:
                 pass
         log_path = run_dir / 'preview.log'
         if log_path.exists():
