@@ -73,6 +73,7 @@
           if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         }
         this.config = data.config;
+        this.claudeCalibration = data.claude_calibration || {budget: null, samples: 0};
         this.catalog = data.catalog || data.agy_catalog || {
           lectura: ["ls", "tree", "pwd", "cat", "head", "tail", "wc", "grep", "git status", "git log", "git diff", "git show", "git ls-files", "git grep", "git blame", "git rev-parse"],
           pruebas: ["npm test", "npm run test", "npm run lint", "npm run typecheck", "pnpm test", "pnpm run lint", "yarn test", "yarn lint", "pytest", "python3 -m pytest", "python -m pytest"],
@@ -206,6 +207,7 @@
             card.append(change);
           }
         }
+        if (name === master && name === 'claude') this.renderClaudeBudget(card);
         masterSection.append(card);
       }
       const distribution = this.section('Escalamiento');
@@ -227,6 +229,7 @@
         this.field(card, 'Modelo', `agents.${name}.model`, 'text', {placeholder: 'Predeterminado'});
         if (name === 'agy') this.field(card, 'Presupuesto diario de tokens',
           `agents.${name}.daily_token_budget`, 'number', {min: 0, default: 0});
+        if (name === 'claude') this.renderClaudeBudget(card);
         this.renderPermissions(card, name, agent);
       }
       const limits = this.section('Límites');
@@ -246,6 +249,15 @@
       this.status.setAttribute('role', 'status');
       footer.append(this.save, this.status);
       this.form.append(footer);
+    }
+    renderClaudeBudget(card) {
+      this.field(card, 'Presupuesto de tokens por 5 h', 'agents.claude.five_hour_token_budget',
+        'number', {min: 0, default: 0, suffix: '0 = automático'});
+      const {budget, samples} = this.claudeCalibration || {};
+      // TODO(diseño): texto de calibración en Plex Mono 11px y --muted.
+      card.append(this.api.node('p', 'permissions-help', budget
+        ? `Automático: ${(budget / 1000000).toFixed(1)} M calibrado con ${samples} mediciones`
+        : 'Automático: sin mediciones todavía (usa Claude Code en la terminal una vez para calibrar)'));
     }
     async request(path, body) {
       const token = document.querySelector('meta[name="ai-delegate-token"]')?.content || '';

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from . import config, detect, install, routing, runs, stats, worktree
+from . import config, detect, install, quota, routing, runs, stats, worktree
 from .errors import DelegateError
 from .ui_state import build_state
 
@@ -58,6 +58,8 @@ def _is_allowed_config_key(k: str) -> bool:
         "limits.timeout_min", "limits.max_review_rounds", "limits.keep_days",
         "ui.time_mode", "ui.fixed_hour",
     }
+    if k == "agents.claude.five_hour_token_budget":
+        return True
     if k in exact:
         return True
     if k.startswith("routing.") and len(k) > len("routing."):
@@ -111,9 +113,9 @@ def _validate_change_value(k: str, v: Any, cfg: dict[str, Any]) -> str | None:
         elif field == "model":
             if not isinstance(v, str) or len(v) > 60:
                 return f"agents.{agent_name}.model debe ser string de hasta 60 caracteres"
-        elif field == "daily_token_budget":
+        elif field in {"daily_token_budget", "five_hour_token_budget"}:
             if not isinstance(v, int) or isinstance(v, bool) or v < 0:
-                return f"agents.{agent_name}.daily_token_budget debe ser entero >= 0"
+                return f"agents.{agent_name}.{field} debe ser entero >= 0"
     elif k == "limits.timeout_min":
         if not isinstance(v, int) or isinstance(v, bool) or not (1 <= v <= 240):
             return "limits.timeout_min debe ser entero entre 1 y 240"
@@ -173,6 +175,7 @@ class Handler(BaseHTTPRequestHandler):
                     ag["permissions"] = permissions.get_effective_permissions(ag, name)
                 self._json({
                     "config": cfg,
+                    "claude_calibration": quota.calibration(),
                     "detected": det_data,
                     "kinds": routing.kinds(cfg),
                     "path": str(config.config_path()),

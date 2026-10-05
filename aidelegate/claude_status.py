@@ -120,6 +120,8 @@ def statusline_main(argv: list[str] | None = None) -> int:
                             json.dump(data, fh, ensure_ascii=False)
                         temporary.replace(root / "claude-quota.json")
                         temporary = None
+                        from . import quota
+                        quota.calibrate(windows, now)
     except Exception:
         output_parts = ["ai-delegate"]
     finally:

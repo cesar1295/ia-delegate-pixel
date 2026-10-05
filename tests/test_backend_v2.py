@@ -108,7 +108,7 @@ def test_budget_and_exhausted(home):
     meta.updated_at = (now - timedelta(minutes=31)).isoformat()
     assert quota.get("agy", cfg, [meta], now)["remaining_pct"] is None
     config.data_dir().mkdir(parents=True)
-    (config.data_dir() / "claude-quota.json").write_text(json.dumps({"windows": [{"label": "5 h", "used_pct": 15, "resets_at": None}]}))
+    (config.data_dir() / "claude-quota.json").write_text(json.dumps({"ts": now.isoformat(), "windows": [{"label": "5 h", "used_pct": 15, "resets_at": None}]}))
     assert quota.get("claude", cfg, [], now)["remaining_pct"] == 85
 
 
