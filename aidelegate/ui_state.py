@@ -110,7 +110,8 @@ def _main(metas: list[RunMeta], claude: dict | None, now: datetime,
 
     if escalated and (recent_escalation or master_active):
         state = character("fixing", f"terminando: {first_line(escalated.task, 50)}", escalated)
-    elif review := next((m for m in metas if m.status == "listo-para-revisar"), None):
+    elif review := next((m for m in metas if m.status == "listo-para-revisar"
+                         and (0 <= age(m.updated_at, now) < 1800 or master_active)), None):
         state = character("reviewing", f"revisando {'-'.join(review.run_id.split('-')[-2:])}", review)
     elif 0 <= hook_age < 30 and hook.get("state") in {"working", "waiting", "idle"}:
         if hook["state"] == "waiting":

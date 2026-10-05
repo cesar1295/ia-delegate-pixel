@@ -165,3 +165,12 @@ def test_round_start_survives_progress(isolated_home):
     run = meta(phase='agente', phase_started_at=(NOW - timedelta(seconds=10)).isoformat())
     result = build_state([run], None, [], NOW)['agents'][1]
     assert result['state'] == 'drawing'
+
+
+def test_stale_review_does_not_keep_master_reviewing():
+    old = meta(status="listo-para-revisar", updated_at=(NOW - timedelta(hours=1)).isoformat())
+    result = build_state([old], None, [], NOW)["agents"]
+    assert result[0]["state"] != "reviewing"
+    assert result[1]["state"] == "review"
+    active = {"state": "working", "ts": (NOW - timedelta(minutes=2)).isoformat()}
+    assert build_state([old], active, [], NOW)["agents"][0]["state"] == "reviewing"

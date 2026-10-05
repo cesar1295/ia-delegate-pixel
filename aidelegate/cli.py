@@ -242,6 +242,13 @@ def _continue(meta: RunMeta, run_dir: Path, cfg: dict[str, Any], text: str, labe
 
 def cmd_merge(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     meta, run_dir = _load(args.run)
+    if not meta.worktree and not meta.branch and meta.mode == "write":
+        _require_open(meta)
+        meta.status = "integrado"
+        runs.add_event(meta, "merged")
+        stats.record(meta, "integrado")
+        print(f"cerrada {meta.run_id}: trabajó directo en {report.short(meta.source_dir or '')}, no había worktree que integrar")
+        return 0
     path = _require_worktree(meta)
     message = args.message or f"ai-delegate({meta.agent}): {meta.task.strip().splitlines()[0][:72]}"
     worktree.merge(Path(meta.project_root or ""), path, meta.branch or "", meta.base_branch or "", message)

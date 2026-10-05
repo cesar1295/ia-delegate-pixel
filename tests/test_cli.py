@@ -150,3 +150,12 @@ def test_read_mode_runs_in_place_without_worktree(home, repo):
     assert run("--dir", str(repo), "--kind", "review", "revisa el repo") == 0
     meta = last_meta()
     assert meta.mode == "read" and meta.worktree is None and meta.status == "ok"
+
+
+def test_merge_closes_in_place_write_run(home, repo, capsys):
+    assert run("--dir", str(repo), "--no-worktree", "--check", "none", "crea hecho.txt") == 0
+    meta = last_meta()
+    assert meta.worktree is None and meta.status == "listo-para-revisar"
+    assert run("merge", meta.run_id) == 0
+    assert last_meta().status == "integrado"
+    assert "no había worktree" in capsys.readouterr().out

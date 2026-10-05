@@ -54,6 +54,7 @@ def test_detect(installed):
 
 def test_desktop_semver(installed, monkeypatch):
     (installed / "bin/claude").unlink()
+    monkeypatch.setenv("PATH", os.pathsep.join([str(installed / "bin"), "/usr/bin", "/bin"]))
     monkeypatch.setattr(detect.sys, "platform", "linux")
     for version in ("2.1.9", "2.1.10"):
         path = installed / ".config/Claude/claude-code" / version / "claude"
