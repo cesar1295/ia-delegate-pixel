@@ -80,3 +80,57 @@ def test_priority_and_counts():
     assert result["agents"][0]["state"] == "reviewing"
     assert result["counts"] == {"running": 1, "review": 1, "merged_today": 1}
     assert result["stats"][0]["primera_pct"] == 100
+
+
+def test_escalated_timing_and_pending():
+    old_run = meta(status="escalado-a-main", task="tarea vieja escalada",
+                   updated_at=(NOW - timedelta(hours=2)).isoformat())
+    res_old = build_state([old_run], None, [], NOW)["agents"][0]
+    assert res_old["state"] != "fixing"
+    assert res_old["detail"] == "tarea escalada pendiente desde 12:00"
+    assert res_old["pending"] == {
+        "run_id": old_run.run_id,
+        "task": "tarea vieja escalada",
+        "since": (NOW - timedelta(hours=2)).isoformat(),
+    }
+
+    recent_run = meta(status="escalado-a-main", task="tarea reciente escalada",
+                      updated_at=(NOW - timedelta(minutes=5)).isoformat())
+    res_recent = build_state([recent_run], None, [], NOW)["agents"][0]
+    assert res_recent["state"] == "fixing"
+    assert res_recent["detail"] == "terminando: tarea reciente escalada"
+    assert res_recent["pending"] == {
+        "run_id": recent_run.run_id,
+        "task": "tarea reciente escalada",
+        "since": (NOW - timedelta(minutes=5)).isoformat(),
+    }
+
+
+@pytest.mark.parametrize("source", ["hook", "activity"])
+@pytest.mark.parametrize("minutes,fixing", [(9, True), (10, False)])
+def test_old_escalation_master_activity(monkeypatch, source, minutes, fixing):
+    from aidelegate import activity
+    stamp = NOW - timedelta(minutes=minutes)
+    monkeypatch.setattr(activity, "last_activity", lambda name: stamp if source == "activity" else None)
+    hook = {"state": "working", "ts": stamp.isoformat()} if source == "hook" else None
+    old = meta(status="escalado-a-main", updated_at=(NOW - timedelta(hours=2)).isoformat())
+    result = build_state([old], hook, [], NOW)["agents"][0]
+    assert (result["state"] == "fixing") is fixing
+    assert result["pending"]["run_id"] == old.run_id
+
+
+def test_pending_oldest_and_escalation_boundary():
+    old = meta(run_id="old", status="escalado-a-main", task="x" * 80,
+               updated_at=(NOW - timedelta(hours=2)).isoformat())
+    newer = meta(run_id="new", status="escalado-a-main",
+                 updated_at=(NOW - timedelta(minutes=30)).isoformat())
+    for ordered in ([old, newer], [newer, old]):
+        result = build_state(ordered, None, [], NOW)["agents"][0]
+        assert result["state"] == "sleep"
+        assert result["pending"]["run_id"] == "old"
+        assert len(result["pending"]["task"]) == 60
+    newer.updated_at = (NOW - timedelta(minutes=5)).isoformat()
+    result = build_state([old, newer], None, [], NOW)["agents"][0]
+    assert result["state"] == "fixing"
+    assert result["run_id"] == "new"
+    assert result["pending"]["run_id"] == "old"

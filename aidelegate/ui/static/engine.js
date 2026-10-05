@@ -468,7 +468,10 @@
       if (p.carry) this.sprite(art.items[p.carry], art.palettes.items, p.pos.x + 5, p.pos.y + 12);
       const states = {sleep: 'sleep', quota: 'wait', waiting: 'question', fixing: 'alert', checks: 'wait',
         review: 'question', reviewing: 'look', failed: 'fail', celebrate: 'done'};
-      const emote = t < p.emoteUntil ? p.emote : states[p.agent.state];
+      let emote = t < p.emoteUntil ? p.emote : states[p.agent.state];
+      if (p.agent.role === 'main' && p.agent.state !== 'fixing' && p.agent.pending) {
+        emote = Math.floor(t / 1000) % 2 === 0 ? 'alert' : null;
+      }
       if (emote) this.sprite(art.emotes[emote], art.palettes.emote, p.pos.x + 12, p.pos.y - 9);
       if (!this.motion.matches) {
         if (['working', 'fixing', 'reviewing'].includes(p.agent.state) && art.particles[p.agent.name]

@@ -79,34 +79,67 @@ def _agent(metas: list[RunMeta], now: datetime, max_fix: int) -> dict:
     return character("idle")
 
 
+def format_hh_mm(ts: str | None, now: datetime) -> str:
+    try:
+        date = datetime.fromisoformat(ts or "")
+        if date.tzinfo is None and now.tzinfo is not None:
+            date = date.replace(tzinfo=now.tzinfo)
+        elif date.tzinfo is not None and now.tzinfo is not None:
+            date = date.astimezone(now.tzinfo)
+        elif date.tzinfo is not None and now.tzinfo is None:
+            date = date.astimezone().replace(tzinfo=None)
+        return date.strftime("%H:%M")
+    except (ValueError, TypeError):
+        return ""
+
+
 def _main(metas: list[RunMeta], claude: dict | None, now: datetime,
             name: str = "claude", user_name: str = "usuario") -> dict:
     hook = claude or {}
-    escalated = next((m for m in metas if m.status == "escalado-a-main"), None)
-    if escalated:
-        return character("fixing", f"terminando: {first_line(escalated.task, 50)}", escalated)
-    review = next((m for m in metas if m.status == "listo-para-revisar"), None)
-    if review:
-        return character("reviewing", f"revisando {'-'.join(review.run_id.split('-')[-2:])}", review)
-    elapsed = age(hook.get("ts"), now)
-    if 0 <= elapsed < 30 and hook.get("state") in {"working", "waiting", "idle"}:
-        if hook["state"] == "waiting":
-            return character("waiting", f"esperando a {user_name}", since=hook.get("ts"))
-        if hook["state"] == "idle":
-            return character("idle", since=hook.get("ts"))
-        tool = hook.get("detail") or hook.get("tool")
-        return character("working", f"trabajando ({tool})" if tool else "trabajando", since=hook.get("ts"))
+    hook_age = age(hook.get("ts"), now)
     session = activity.last_activity(name)
     session_ts = session.isoformat() if session else None
-    if not any(m.agent == name and alive(m, now) for m in metas):
-        session_age = age(session_ts, now)
-        if 0 <= session_age < 20 and elapsed >= 30:
-            return character("working", "trabajando", since=session_ts)
-        if session_age >= 0:
-            elapsed = min(elapsed, session_age)
-    if hook.get("state") == "waiting" and elapsed < 600:
-        return character("waiting", f"esperando a {user_name}", since=hook.get("ts"))
-    return character("sleep" if elapsed > 900 else "idle")
+    session_age = age(session_ts, now)
+
+    escalated_runs = [m for m in metas if m.status == "escalado-a-main"]
+    oldest = max(escalated_runs, key=lambda m: age(m.updated_at, now)) if escalated_runs else None
+    escalated = min(escalated_runs, key=lambda m: age(m.updated_at, now)) if escalated_runs else None
+
+    master_active = (0 <= hook_age < 600) or (0 <= session_age < 600)
+    recent_escalation = any(0 <= age(m.updated_at, now) < 1800 for m in escalated_runs)
+
+    if escalated and (recent_escalation or master_active):
+        state = character("fixing", f"terminando: {first_line(escalated.task, 50)}", escalated)
+    elif review := next((m for m in metas if m.status == "listo-para-revisar"), None):
+        state = character("reviewing", f"revisando {'-'.join(review.run_id.split('-')[-2:])}", review)
+    elif 0 <= hook_age < 30 and hook.get("state") in {"working", "waiting", "idle"}:
+        if hook["state"] == "waiting":
+            state = character("waiting", f"esperando a {user_name}", since=hook.get("ts"))
+        elif hook["state"] == "idle":
+            state = character("idle", since=hook.get("ts"))
+        else:
+            tool = hook.get("detail") or hook.get("tool")
+            state = character("working", f"trabajando ({tool})" if tool else "trabajando", since=hook.get("ts"))
+    else:
+        elapsed = hook_age
+        state = None
+        if not any(m.agent == name and alive(m, now) for m in metas):
+            if 0 <= session_age < 20 and elapsed >= 30:
+                state = character("working", "trabajando", since=session_ts)
+            elif session_age >= 0:
+                elapsed = min(elapsed, session_age)
+        if state is None:
+            if hook.get("state") == "waiting" and elapsed < 600:
+                state = character("waiting", f"esperando a {user_name}", since=hook.get("ts"))
+            else:
+                state = character("sleep" if elapsed > 900 else "idle")
+
+    if oldest:
+        state["pending"] = {"run_id": oldest.run_id, "task": first_line(oldest.task, 60), "since": oldest.updated_at}
+        if state["state"] != "fixing":
+            hh_mm = format_hh_mm(oldest.updated_at, now)
+            state["detail"] = f"tarea escalada pendiente desde {hh_mm}" if hh_mm else "tarea escalada pendiente"
+    return state
 
 
 def build_state(metas: list[RunMeta], claude: dict | None, ledger_rows: list[dict],

@@ -116,17 +116,22 @@ def test_report_v5(tmp_path, capsys):
     assert 'pre-revisión (codex): 0 graves · 0 medios · 2 menores' in output
 
 
-def test_visual_real_browser(repo, tmp_path):
+@pytest.mark.parametrize("console_error", [False, True])
+def test_visual_real_browser(repo, tmp_path, console_error):
     if not all(visual.tools_available()):
         pytest.skip('falta node 22 o navegador')
     try:
         visual.free_port()
     except PermissionError:
         pytest.skip('el sandbox bloquea sockets locales')
-    (repo / 'index.html').write_text('<!doctype html><title>Prueba</title><p>Hola</p>')
+    (repo / 'index.html').write_text('<!doctype html><title>Prueba</title><p>Hola</p>'
+                                    + ('<script>console.error("error de prueba"); throw new Error("excepción de prueba")</script>'
+                                       if console_error else ''))
     meta = runs.RunMeta('x', 'codex', 'write', 'feature', 'r', str(repo), str(repo), 't')
     result = visual.run(meta, tmp_path, config.load())
-    assert result['status'] == 'ok', result['note']
+    assert result['status'] == ('fallo' if console_error else 'ok'), result['note']
+    if console_error:
+        assert result['errors'] >= 2
     assert len(result['shots']) == 2
     assert all((tmp_path / shot).exists() for shot in result['shots'])
 
@@ -377,3 +382,154 @@ def test_visual_masks_external_errors_and_preview_log(repo, tmp_path, monkeypatc
     assert result['status'] == 'fallo'
     assert '[CORREO]' in result['note'] and 'external@example.com' not in result['note']
     assert (tmp_path / 'preview.log').read_text() == 'preview [CORREO]\n'
+
+
+def test_visual_empty_node_modules_is_omitted(repo, tmp_path, monkeypatch):
+    def unexpected_tools():
+        pytest.fail("no debe intentar arrancar la vista sin dependencias")
+    monkeypatch.setattr(visual, "tools_available", unexpected_tools)
+    (repo / 'package.json').write_text(json.dumps({'scripts': {'dev': 'vite'}}))
+    (repo / 'index.html').write_text('<html></html>')
+    meta = runs.RunMeta('x', 'codex', 'write', 'feature', 'r', str(repo), str(repo), 't')
+    # Sin node_modules
+    res = visual.run(meta, tmp_path, config.load())
+    assert res['status'] == 'omitida'
+    assert 'faltan dependencias: corre npm install (o pnpm/yarn) en el proyecto' in res['note']
+
+    # Con node_modules vacío
+    (repo / 'node_modules').mkdir(exist_ok=True)
+    res = visual.run(meta, tmp_path, config.load())
+    assert res['status'] == 'omitida'
+    assert 'faltan dependencias: corre npm install (o pnpm/yarn) en el proyecto' in res['note']
+
+
+def test_visual_omitted_does_not_trigger_correction(home, repo, monkeypatch):
+    calls = []
+
+    def fake_view(*args):
+        calls.append('vista')
+        return {'status': 'omitida', 'shots': [], 'errors': 0,
+                'note': 'faltan dependencias: corre npm install (o pnpm/yarn) en el proyecto'}
+
+    monkeypatch.setattr(visual, 'run', fake_view)
+    assert main(['run', '--to', 'codex', '--dir', str(repo), '--check', 'none', 'hazlo']) == 0
+    meta = runs.load(runs.resolve('last'))
+    assert calls == ['vista']
+    assert meta.visual['status'] == 'omitida'
+    assert meta.fix_rounds == 0
+    assert meta.status == 'listo-para-revisar'
+
+
+def test_visual_server_fails_to_start_is_omitted(repo, tmp_path, monkeypatch):
+    (repo / 'index.html').write_text('<html></html>')
+    monkeypatch.setattr(visual, 'tools_available', lambda: ('node', 'browser'))
+    monkeypatch.setattr(visual, 'free_port', lambda: 12345)
+    monkeypatch.setattr(visual.os, 'killpg', lambda *a: None)
+
+    class FailingProcess:
+        pid = 123456
+        returncode = 1
+
+        def __init__(self, args, **kwargs):
+            if kwargs.get('stdout'):
+                kwargs['stdout'].write('línea descartada\nuno\ndos\nerror fatal en servidor\n')
+                kwargs['stdout'].flush()
+
+        def poll(self):
+            return 1
+
+        def wait(self, **kwargs):
+            return 1
+
+    from types import SimpleNamespace
+    monkeypatch.setattr(visual.subprocess, 'run', lambda *a, **kw: SimpleNamespace(stdout='index.html\n'))
+    monkeypatch.setattr(visual.subprocess, 'Popen', FailingProcess)
+
+    cfg = config.load()
+    cfg.setdefault('projects', {})[str(repo)] = {'preview': 'dummy-cmd {port}'}
+    meta = runs.RunMeta('x', 'codex', 'write', 'feature', 'r', str(repo), str(repo), 't')
+    res = visual.run(meta, tmp_path, cfg)
+    assert res['status'] == 'omitida'
+    assert 'no se pudo levantar el proyecto:' in res['note']
+    assert res['note'] == 'no se pudo levantar el proyecto:\nuno\ndos\nerror fatal en servidor'
+
+
+def test_visual_console_errors_fail(repo, tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    (repo / 'index.html').write_text('<html></html>')
+    monkeypatch.setattr(visual, 'tools_available', lambda: ('node', 'browser'))
+    monkeypatch.setattr(visual, 'free_port', lambda: 12345)
+    monkeypatch.setattr(visual.urllib.request, 'urlopen', lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(visual.os, 'killpg', lambda *a: None)
+
+    class Process:
+        pid = 123456
+        returncode = 0
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def poll(self):
+            return None
+
+        def wait(self, **kwargs):
+            return 0
+
+        def communicate(self, **kwargs):
+            return json.dumps({'shots': ['screens/inicio.png'], 'errors': [
+                {'path': '/', 'size': 'movil', 'text': 'Uncaught Error: falló la vista'}]}), ''
+
+    from types import SimpleNamespace
+    monkeypatch.setattr(visual.subprocess, 'run', lambda *a, **kw: SimpleNamespace(stdout='index.html\n'))
+    monkeypatch.setattr(visual.subprocess, 'Popen', Process)
+    meta = runs.RunMeta('x', 'codex', 'write', 'feature', 'r', str(repo), str(repo), 't')
+    result = visual.run(meta, tmp_path, config.load())
+    assert result['status'] == 'fallo'
+    assert 'Uncaught Error: falló la vista' in result['note']
+
+
+def test_visual_server_timeout_is_omitted(repo, tmp_path, monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise OSError('servidor no disponible')
+    monkeypatch.setattr(visual.urllib.request, 'urlopen', unavailable)
+    (repo / 'index.html').write_text('<html></html>')
+    monkeypatch.setattr(visual, 'tools_available', lambda: ('node', 'browser'))
+    monkeypatch.setattr(visual, 'free_port', lambda: 12345)
+    monkeypatch.setattr(visual.os, 'killpg', lambda *a: None)
+
+    class HangingProcess:
+        pid = 123456
+        returncode = None
+
+        def __init__(self, args, **kwargs):
+            if kwargs.get('stdout'):
+                kwargs['stdout'].write('iniciando servidor...\n')
+                kwargs['stdout'].flush()
+
+        def poll(self):
+            return None
+
+        def wait(self, **kwargs):
+            return 0
+
+    from types import SimpleNamespace
+    monkeypatch.setattr(visual.subprocess, 'run', lambda *a, **kw: SimpleNamespace(stdout='index.html\n'))
+    monkeypatch.setattr(visual.subprocess, 'Popen', HangingProcess)
+    deadline_reached = [False]
+
+    def fake_monotonic():
+        if deadline_reached[0]:
+            return 999999999
+        deadline_reached[0] = True
+        return 0
+
+    monkeypatch.setattr(visual.time, 'monotonic', fake_monotonic)
+    monkeypatch.setattr(visual.time, 'sleep', lambda s: None)
+
+    cfg = config.load()
+    cfg.setdefault('projects', {})[str(repo)] = {'preview': 'dummy-cmd {port}'}
+    meta = runs.RunMeta('x', 'codex', 'write', 'feature', 'r', str(repo), str(repo), 't')
+    res = visual.run(meta, tmp_path, cfg)
+    assert res['status'] == 'omitida'
+    assert 'no se pudo levantar el proyecto:' in res['note']
+    assert 'iniciando servidor...' in res['note']
