@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -30,7 +31,7 @@ def _snapshot() -> dict[str, float]:
     for folder in PROTECTED_DIRS:
         for path in [*folder.glob("*"), *folder.glob("*/*")]:
             # solo configuración: los registros y bases internas (sqlite, logs, auth) los cambian las propias IAs
-            if path.suffix in CONFIG_SUFFIXES and path.name != "auth.json" and (path.is_file() or path.is_symlink()):
+            if path.suffix in CONFIG_SUFFIXES and path.name not in {"auth.json", "models_cache.json"} and (path.is_file() or path.is_symlink()):
                 found[str(path)] = path.lstat().st_mtime
     return found
 
@@ -51,7 +52,7 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path_factory, monkeypatch):
-    """Cada prueba corre con un HOME y carpetas XDG falsas; nada escribe en la máquina real."""
+    """HOME, perfiles y CLIs temporales; no ejecuta las IAs instaladas del usuario."""
     fake = tmp_path_factory.mktemp("home")
     for var, sub in (("HOME", ""), ("XDG_CONFIG_HOME", ".config"), ("XDG_DATA_HOME", ".local/share"),
                      ("XDG_CACHE_HOME", ".cache")):
@@ -60,6 +61,18 @@ def isolated_home(tmp_path_factory, monkeypatch):
         monkeypatch.setenv(var, str(target))
     monkeypatch.setenv("AI_DELEGATE_HOME", str(fake / ".local/share/ai-delegate"))
     monkeypatch.setenv("AI_DELEGATE_CONFIG", str(fake / ".config/ai-delegate/config.toml"))
+    # HOME no basta si el proceso padre exportó una ruta de perfil explícita.
+    for var, sub in (("CODEX_HOME", ".codex"), ("CLAUDE_CONFIG_DIR", ".claude")):
+        target = fake / sub
+        target.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv(var, str(target))
+    # doctor/detect también ejecutan --version. Deben usar los mismos dobles que
+    # las corridas, sin encontrar binarios reales a través del PATH heredado.
+    binaries = fake / "test-bin"
+    binaries.mkdir()
+    for name in ("codex", "claude", "agy"):
+        (binaries / name).symlink_to(FAKES / f"fake_{name}.py")
+    monkeypatch.setenv("PATH", str(binaries) + os.pathsep + os.environ.get("PATH", ""))
     for var in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
         monkeypatch.setenv(var, "Prueba")
     for var in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):

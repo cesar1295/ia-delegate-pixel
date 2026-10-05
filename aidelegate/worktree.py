@@ -26,8 +26,8 @@ class Worktree:
     dirty_base: bool
 
 
-def git(cwd: Path, *args: str, check: bool = True) -> str:
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+def git(cwd: Path, *args: str, check: bool = True, timeout: float | None = None) -> str:
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
     if check and proc.returncode != 0:
         raise DelegateError(f"git {' '.join(args[:3])} falló en {cwd}: {proc.stderr.strip()[:400]}")
     return proc.stdout.strip()
@@ -99,8 +99,8 @@ def merge(root: Path, path: Path, branch: str, base_branch: str, message: str) -
     remove(root, path, branch)
 
 
-def remove(root: Path, path: Path, branch: str) -> None:
+def remove(root: Path, path: Path, branch: str, timeout: float | None = None) -> None:
     if path.exists():
-        git(root, "worktree", "remove", "--force", str(path))
-    git(root, "worktree", "prune", check=False)
-    git(root, "branch", "-D", branch, check=False)
+        git(root, "worktree", "remove", "--force", str(path), timeout=timeout)
+    git(root, "worktree", "prune", check=timeout is not None, timeout=timeout)
+    git(root, "branch", "-D", branch, check=timeout is not None, timeout=timeout)

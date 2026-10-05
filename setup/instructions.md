@@ -32,7 +32,8 @@ dárselo. El escalamiento automático (agy → Codex tras 2 correcciones → mae
 2. Lee el reporte: si aceptación, vista y pre-revisión están en verde, revisa solo las capturas y el diff --stat; abre el diff completo solo si algo está en rojo o la tarea es delicada.
 3. Si está mal, `ai-delegate feedback <id> "<correcciones concretas>"` (máx. 2 rondas) y luego `escalate <id>`.
    Si llega a ti (código de salida 3), termínalo en el worktree que indica.
-4. Si está bien, `ai-delegate merge <id>`; si no sirve, `discard <id>`. Desconfía de `sin-cambios` y de resúmenes
+4. Si integras tú (commit manual) o la corrida fue en la carpeta, ciérrala igual con ai-delegate merge <id>; si no, ai-delegate la detecta y la cierra sola.
+   Si está bien, `ai-delegate merge <id>`; si no sirve, `discard <id>`. Desconfía de `sin-cambios` y de resúmenes
    ilegibles: revisa el diff siempre.
 
 ## Diseño: la maestra decide, los agentes codifican

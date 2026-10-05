@@ -7,7 +7,7 @@ import re
 
 from .errors import DelegateError
 
-SUBCOMMANDS = ("run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats", "ui", "claude-status", "claude-statusline", "setup", "master", "doctor")
+SUBCOMMANDS = ("pending", "tidy", "run", "diff", "feedback", "escalate", "merge", "discard", "show", "list", "stats", "ui", "claude-status", "claude-statusline", "setup", "master", "doctor")
 
 
 def parse(argv: list[str]) -> argparse.Namespace:
@@ -44,6 +44,8 @@ def _parser() -> argparse.ArgumentParser:
     _add_run_ref(sub, "discard", "Descarta el worktree y la rama de la corrida.")
     _add_run_ref(sub, "show", "Muestra el estado y resumen de una corrida.")
     sub.add_parser("list", help="Corridas recientes.").add_argument("-n", type=int, default=15)
+    sub.add_parser("pending", help="Corridas abiertas por proyecto.").add_argument("--hook", action="store_true")
+    sub.add_parser("tidy", help="Cierra corridas resueltas fuera de ai-delegate.")
     sub.add_parser("stats", help="Tasa de aceptación por agente y tipo de tarea.")
     ui = sub.add_parser("ui", help="Abre la oficina pixel local.")
     ui.add_argument("--port", type=int, default=8765)

@@ -883,3 +883,20 @@ button:disabled {
     gap:4px;
   }
 }
+.team-pending {
+  display:block;
+  margin-top:2px;
+  padding:0;
+  border:0;
+  background:none;
+  font:11px var(--body);
+  color:var(--warn);
+  text-align:left;
+  cursor:pointer
+}
+.team-pending:hover,.team-pending:focus-visible { text-decoration:underline }
+.closed-reason {
+  margin:0;
+  font:11px var(--body);
+  color:var(--muted)
+}

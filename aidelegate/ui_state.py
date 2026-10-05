@@ -102,7 +102,9 @@ def _main(metas: list[RunMeta], claude: dict | None, now: datetime,
     session_age = age(session_ts, now)
 
     escalated_runs = [m for m in metas if m.status == "escalado-a-main"]
-    oldest = max(escalated_runs, key=lambda m: age(m.updated_at, now)) if escalated_runs else None
+    pending_runs = escalated_runs + [m for m in metas if m.status == "listo-para-revisar"
+                                    and age(m.updated_at, now) > 1800]
+    oldest = max(pending_runs, key=lambda m: age(m.updated_at, now)) if pending_runs else None
     escalated = min(escalated_runs, key=lambda m: age(m.updated_at, now)) if escalated_runs else None
 
     master_active = (0 <= hook_age < 600) or (0 <= session_age < 600)
@@ -137,9 +139,11 @@ def _main(metas: list[RunMeta], claude: dict | None, now: datetime,
 
     if oldest:
         state["pending"] = {"run_id": oldest.run_id, "task": first_line(oldest.task, 60), "since": oldest.updated_at}
-        if state["state"] != "fixing":
+        state["pending_prefix"] = "tarea escalada pendiente" if oldest.status == "escalado-a-main" else "revisión pendiente"
+        if state["state"] not in {"fixing", "reviewing"}:
             hh_mm = format_hh_mm(oldest.updated_at, now)
-            state["detail"] = f"tarea escalada pendiente desde {hh_mm}" if hh_mm else "tarea escalada pendiente"
+            prefix = state["pending_prefix"]
+            state["detail"] = f"{prefix} desde {hh_mm}" if hh_mm else prefix
     return state
 
 

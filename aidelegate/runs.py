@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import json
 import re
 import shutil
+import subprocess
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +21,37 @@ from .errors import DelegateError
 
 # Estados que todavía esperan una decisión: no se limpian aunque sean viejos.
 PENDING = {"running", "listo-para-revisar", "checks-fallidos", "escalado-a-main", "sin-cambios"}
+
+
+_state_lock = threading.RLock()
+_lock_local = threading.local()
+
+
+@contextmanager
+def state_lock():
+    """Serializa cambios de corridas entre hilos y procesos (Linux/macOS).
+
+    flock se libera incluso si el hook termina por timeout. La profundidad local
+    permite que save/add_event se llamen dentro de una conciliación o cierre.
+    """
+    with _state_lock:
+        if getattr(_lock_local, "depth", 0):
+            _lock_local.depth += 1
+            try:
+                yield
+            finally:
+                _lock_local.depth -= 1
+            return
+        root = config.runs_dir()
+        root.mkdir(parents=True, exist_ok=True)
+        with (root / ".state.lock").open("a") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            _lock_local.depth = 1
+            try:
+                yield
+            finally:
+                _lock_local.depth = 0
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 @dataclass
@@ -51,6 +87,10 @@ class RunMeta:
     visual: dict | None = None
     prereview: dict | None = None
     no_review: bool = False
+    start_head: str | None = None
+    start_snapshot: dict[str, str | None] = field(default_factory=dict)
+    touched_files: list[str] = field(default_factory=list)
+    closed_reason: str | None = None
     diffstat: str | None = None
     fix_rounds: int = 0
     review_rounds: int = 0
@@ -92,10 +132,11 @@ def create(meta: RunMeta) -> Path:
 
 
 def save(meta: RunMeta, run_dir: Path) -> None:
-    meta.updated_at = datetime.now().isoformat(timespec="seconds")
-    tmp = run_dir / "meta.json.tmp"
-    tmp.write_text(json.dumps(asdict(meta), indent=2, ensure_ascii=False))
-    tmp.replace(run_dir / "meta.json")
+    with state_lock():
+        meta.updated_at = datetime.now().isoformat(timespec="seconds")
+        tmp = run_dir / "meta.json.tmp"
+        tmp.write_text(json.dumps(asdict(meta), indent=2, ensure_ascii=False))
+        tmp.replace(run_dir / "meta.json")
 
 
 def add_event(meta: RunMeta, type: str, label: str = "") -> None:
@@ -158,3 +199,71 @@ def _is_pending(run_dir: Path) -> bool:
     except (OSError, ValueError, TypeError):
         return False
     return meta.status in PENDING or bool(meta.worktree and Path(meta.worktree).exists())
+
+
+def snapshot(root: Path) -> dict[str, str | None]:
+    result = subprocess.run(["git", "status", "--porcelain", "-z", "--untracked-files=all"],
+                            cwd=root, capture_output=True, check=True, timeout=3)
+    entries = result.stdout.decode(errors="surrogateescape").split("\0")
+    paths = []
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        i += 1
+        if not entry:
+            continue
+        paths.append(entry[3:])
+        if "R" in entry[:2] or "C" in entry[:2]:
+            paths.append(entries[i])
+            i += 1
+    hashes = {}
+    for path in paths:
+        file = root / path
+        try:
+            if file.is_symlink():
+                content = str(file.readlink()).encode()
+            elif file.is_dir():
+                content = _directory_snapshot(file)
+            else:
+                content = file.read_bytes()
+            hashes[path] = hashlib.sha1(content).hexdigest()
+        except FileNotFoundError:
+            hashes[path] = None
+    return hashes
+
+
+def _directory_snapshot(path: Path) -> bytes:
+    # Los gitlinks aparecen como directorios. Incluye también cambios sin commit,
+    # porque el HEAD por sí solo no detecta ediciones dentro del submódulo.
+    result = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=path,
+                            capture_output=True, text=True, timeout=3)
+    if result.returncode or Path(result.stdout.strip()).resolve() != path.resolve():
+        return b"directory"  # Submódulo desinicializado: no tiene árbol que leer.
+    return json.dumps({"head": head(path), "dirty": snapshot(path)},
+                      sort_keys=True, ensure_ascii=True).encode()
+
+
+def head(root: Path) -> str | None:
+    result = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "HEAD"],
+                            cwd=root, capture_output=True, text=True, timeout=3)
+    if result.returncode not in (0, 1):
+        raise subprocess.CalledProcessError(result.returncode, result.args)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def capture_start(meta: RunMeta) -> None:
+    if meta.mode != "write" or meta.worktree or not meta.project_root:
+        return
+    root = Path(meta.project_root)
+    meta.start_head = head(root)
+    meta.start_snapshot = snapshot(root)
+
+
+def track_touched(meta: RunMeta) -> None:
+    if meta.mode != "write" or meta.worktree or not meta.project_root:
+        return
+    current = snapshot(Path(meta.project_root))
+    changed = {p for p in current.keys() | meta.start_snapshot.keys()
+               if p not in current or p not in meta.start_snapshot or current[p] != meta.start_snapshot[p]}
+    meta.touched_files = sorted(set(meta.touched_files) | changed)
+    meta.diffstat = f"{len(meta.touched_files)} archivos tocados"
