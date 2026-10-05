@@ -294,6 +294,7 @@ def test_edit_false_forces_readonly_and_plan():
     cfg["agents"]["codex"]["permissions"]["edit"] = False
     cfg["agents"]["agy"]["permissions"]["edit"] = False
     cfg["agents"]["claude"]["permissions"]["edit"] = False
+    cfg["agents"]["claude"]["bin"] = "claude"  # solo se arma el argv; no depender del Claude instalado
 
     codex = runners.get("codex", cfg)
     assert 'sandbox_mode="read-only"' in codex.argv("p", "write", Path("/r"), None)
