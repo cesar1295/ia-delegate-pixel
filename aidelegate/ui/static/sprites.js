@@ -1676,6 +1676,15 @@ window.PIXEL_ART = {
       "kwbbbwk",
       "kwwwwwk",
       ".kkkkk."
+    ],
+    "image": [
+      ".kkkkk.",
+      "kbbbbyk",
+      "kbbbbbk",
+      "kbgbbbk",
+      "kgggbbk",
+      "kgggggk",
+      ".kkkkk."
     ]
   },
   "particles": {

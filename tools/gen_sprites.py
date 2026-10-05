@@ -74,6 +74,7 @@ emotes = {
     "wait":     icon("yyyyy", "wyyyw", "wwyww", "wywyw", "yyyyy"),
     "sleep":    icon("bbbbw", "wwbww", "wbwww", "bbbbw", "wwwwb"),
     "look":     icon("wwwww", "wbbbw", "bbkbb", "wbbbw", "wwwww"),
+    "image":    icon("bbbby", "bbbbb", "bgbbb", "gggbb", "ggggg"),
 }
 particles = {
     "codex":  ["a.a", ".a.", "a.a"],               # bits menta
