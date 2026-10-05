@@ -45,7 +45,8 @@ def pytest_sessionfinish(session, exitstatus):
                      and not p.endswith((".jsonl", "claude-status.json", "claude-quota.json")))
     if changed:
         session.exitstatus = 1
-        print("\n\nERROR: las pruebas modificaron archivos reales del usuario:\n  " + "\n  ".join(changed))
+        print("\n\nERROR: las pruebas modificaron archivos reales del usuario:\n  " + "\n  ".join(changed)
+              + "\n(Si tú o la oficina cambiaron esa configuración mientras corrían las pruebas, vuelve a correrlas.)")
 
 
 @pytest.fixture(autouse=True)
