@@ -326,6 +326,7 @@ def test_agy_prompt_hint_dynamic():
 
 def test_pick_programmer_skips_agent_without_edit():
     cfg = copy.deepcopy(config.DEFAULTS)
+    cfg["strategy"]["mode"] = "agy-first"
     now = datetime(2026, 10, 4, 15, 0, 0)
     # Por defecto elige agy
     agent, reason = routing.pick_programmer(cfg, {}, {}, now, kind="feature")

@@ -105,6 +105,8 @@ def test_feedback_then_merge_records_stats(home, repo, capsys):
 
 
 def test_review_round_limit_suggests_escalation(home, repo, capsys):
+    cfg_path = config.config_path()
+    cfg_path.write_text(cfg_path.read_text() + "escalate_after = 3\n")
     run("--dir", str(repo), "--check", "none", "crea hecho.txt")
     rid = last_meta().run_id
     run("feedback", rid, "uno")
