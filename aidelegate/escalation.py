@@ -30,7 +30,7 @@ def escalate_run(
         print(f"aviso: {previous} no lo resolvió en {meta.corrections} correcciones; pasa a {nxt}", file=sys.stderr)
 
     if extra_feedback:
-        text = sanitize(extra_feedback, source="el feedback")
+        text = sanitize(extra_feedback, source="el feedback", mask_personal=False)
         meta.feedback.append(text)
         runs.add_event(meta, "feedback")
 
@@ -51,7 +51,9 @@ def escalate_run(
         meta.diffstat = worktree.diffstat_line(Path(meta.worktree), meta.base_commit or "HEAD")
     design = prompt.load_design_spec(meta)
     esc_text = prompt.compose_escalation(meta.task, previous, meta.feedback, meta.diffstat or "", design)
-    prompt_text = sanitize(esc_text, source="el prompt de escalamiento")
+    if meta.acceptance_criteria:
+        esc_text += "\n## Criterios de aceptación (se verificarán automáticamente)\n" + "\n".join(meta.acceptance_criteria) + "\nAntes de entregar, verifica cada criterio; si puedes correr comandos, córrelos.\n"
+    prompt_text = sanitize(esc_text, source="el prompt de escalamiento", mask_personal=False)
 
     if session is not None:
         session.runner = runners.get(nxt, cfg)

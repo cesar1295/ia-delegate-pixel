@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import DelegateError
+from .sanitize import sanitize
 
 MAX_CONTEXT_BYTES = 200_000
 
@@ -51,6 +52,7 @@ class PromptSpec:
     context: str | None = None
     agent_hint: str = ""
     design_spec: str | None = None
+    acceptance_criteria: tuple[str, ...] = ()
 
 
 def design_rule(design_spec: str | None) -> str:
@@ -75,6 +77,10 @@ def compose(spec: PromptSpec) -> str:
         "## Reglas\n\n" + "\n".join(f"- {rule}" for rule in rules),
         *design_section(spec.design_spec),
     ]
+    if spec.acceptance_criteria:
+        parts.append("## Criterios de aceptación (se verificarán automáticamente)\n\n" +
+                     "\n".join(spec.acceptance_criteria) +
+                     "\n\nAntes de entregar, verifica cada criterio; si puedes correr comandos, córrelos.")
     if spec.issue:
         parts.append(f"## Issue de GitHub\n\n{spec.issue.strip()}")
     if spec.context:
@@ -118,7 +124,7 @@ def fetch_issue(ref: str, directory: Path) -> str:
     if proc.returncode != 0:
         raise DelegateError(f"gh no pudo leer el issue {ref}: {proc.stderr.strip()[:300]}")
     data = json.loads(proc.stdout)
-    return f"#{data['number']} {data['title']}\n\n{data.get('body') or ''}"
+    return sanitize(f"#{data['number']} {data['title']}\n\n{data.get('body') or ''}", source="el issue de GitHub")
 
 
 def read_context_file(path: Path) -> str:

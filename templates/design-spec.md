@@ -51,3 +51,14 @@ Textos exactos, alt de imágenes, rutas de imágenes y enlaces.
 - [ ] Todos los estados implementados
 - [ ] Sin estilos ni componentes no especificados
 - [ ] Lo no especificado quedó marcado con `TODO(diseño)`
+
+## Criterios verificables
+
+Estos criterios reemplazan a los criterios de casillas cuando se pueden verificar automáticamente.
+
+```acceptance
+cmd: npm test
+contains: src/components/Hero.tsx :: Bienvenido
+not-contains: src/ :: console.log
+exists: src/components/Hero.tsx
+```

@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 
-from . import checks, config, escalation, prompt, report, routing, runners, runs, stats, summary, usage, worktree
+from . import acceptance, visual, prereview, checks, config, escalation, prompt, report, routing, runners, runs, stats, summary, usage, worktree
 from .runners import AgentResult, Runner
 from .runs import RunMeta
 from .sanitize import sanitize
@@ -49,28 +49,59 @@ def _drive(session: Session, text: str, label: str) -> AgentResult:
     cfg = session.cfg or config.load()
     escalate_after = session.escalate_after
 
-    while meta.status != "sin-cambios" and result.ok and meta.mode == "write" and meta.check_cmd:
-        meta.phase = "checks"
-        runs.save(meta, session.run_dir)
-        check = checks.run(meta.check_cmd, Path(meta.workdir), session.check_timeout_s)
-        meta.last_check = {"cmd": meta.check_cmd, "ok": check.ok, "exit_code": check.exit_code}
-        runs.write_text(session.run_dir, "checks.log", check.output)
-        if check.ok:
+    while meta.status != "sin-cambios" and result.ok and meta.mode == "write":
+        failure = ""
+        if meta.check_cmd:
+            meta.phase = "checks"
+            runs.save(meta, session.run_dir)
+            check = checks.run(meta.check_cmd, Path(meta.workdir), session.check_timeout_s)
+            meta.last_check = {"cmd": meta.check_cmd, "ok": check.ok, "exit_code": check.exit_code}
+            runs.write_text(session.run_dir, "checks.log", sanitize(check.output, source="la salida de los checks", on_secret="redact"))
+            if not check.ok:
+                failure = prompt.compose_check_failure(meta.check_cmd, sanitize(check.output, source="la salida de los checks", on_secret="redact"))
+        if not failure:
+            meta.phase = "aceptacion"
+            runs.save(meta, session.run_dir)
+            meta.acceptance, output = acceptance.evaluate(meta.acceptance_criteria, Path(meta.workdir), session.check_timeout_s)
+            runs.write_text(session.run_dir, "acceptance.log", output)
+            if meta.acceptance["failed"]:
+                failure = "Los criterios de aceptación fallaron; corrígelos:\n" + "\n".join(meta.acceptance["failed"]) + "\n\nSalida de aceptación:\n" + output
+        if not failure:
+            meta.phase = "vista"
+            runs.save(meta, session.run_dir)
+            meta.visual = visual.run(meta, session.run_dir, cfg)
+            runs.write_text(session.run_dir, "visual.log", str(meta.visual))
+            if meta.visual["status"] == "fallo":
+                failure = "La revisión visual falló; corrige estos errores:\n" + meta.visual["note"]
+        review_failure = False
+        if not failure and cfg.get("review", {}).get("enabled", True) and not meta.no_review:
+            meta.phase = "pre-revision"
+            runs.save(meta, session.run_dir)
+            meta.prereview, blocked, reviewer = prereview.run(meta, session.run_dir, cfg, session.timeout_s)
+            if reviewer:
+                meta.duration_s = round(meta.duration_s + reviewer.duration_s, 1)
+                ts = datetime.now().isoformat(timespec="seconds")
+                meta.history.append({"label": "pre-revisión", "agent": meta.prereview["agent"],
+                                     "exit_code": reviewer.exit_code, "seconds": round(reviewer.duration_s, 1),
+                                     "ts": ts, "usage": reviewer.usage, "error": reviewer.error or None})
+                usage.record_work_round(meta.prereview["agent"], reviewer.duration_s, meta.kind, meta.repo, meta.run_id, ts=ts)
+            if blocked and meta.prereview["rounds"] < cfg.get("review", {}).get("max_rounds", 2) and meta.corrections < escalate_after:
+                review_failure = True
+                failure = "La pre-revisión automática encontró estos problemas; corrígelos:\n" + "\n".join(blocked)
+        if not failure:
             break
-
-        if fixes > 0 and meta.corrections >= escalate_after:
+        if not review_failure and fixes > 0 and meta.corrections >= escalate_after:
+            meta.feedback.append(failure)
             result = escalation.escalate_run(meta, session.run_dir, cfg, session=session)
             if meta.status == "escalado-a-main":
                 break
             fixes = 0
             continue
-
         if fixes >= session.max_fix_rounds:
+            meta.status = "checks-fallidos"
             break
-
         fixes += 1
-        output = sanitize(check.output, source="la salida de los checks", on_secret="redact")
-        result = agent_round(session, prompt.compose_check_failure(meta.check_cmd, output), f"corrección {fixes}")
+        result = agent_round(session, failure, f"corrección {fixes}")
         meta.fix_rounds += 1
 
     if meta.status not in {"sin-cambios", "escalado-a-main"}:
@@ -163,7 +194,7 @@ def final_status(meta: RunMeta, result: AgentResult) -> str:
         return "error"
     if meta.mode == "read":
         return "ok"
-    if meta.last_check and not meta.last_check["ok"]:
+    if (meta.last_check and not meta.last_check["ok"]) or (meta.acceptance and meta.acceptance["failed"]) or (meta.visual and meta.visual["status"] == "fallo"):
         return "checks-fallidos"
     return "listo-para-revisar"
 

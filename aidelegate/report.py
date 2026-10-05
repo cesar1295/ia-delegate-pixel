@@ -21,7 +21,7 @@ def print_run(meta: RunMeta, run_dir: Path, max_lines: int) -> None:
         print(f"nota: {meta.fallback_from} agotó su cuota; se usó {meta.agent}")
     print(f"thread: {meta.thread_id or '-'}")
     print(f"corrida: {meta.run_id}  ({short(run_dir)})")
-    _print_workspace(meta)
+    _print_workspace(meta, run_dir)
     if meta.status == "sin-cambios":
         print("aviso: la ronda no cambió ningún archivo; revisa o escala")
     if meta.error:
@@ -30,7 +30,7 @@ def print_run(meta: RunMeta, run_dir: Path, max_lines: int) -> None:
     _print_next(meta)
 
 
-def _print_workspace(meta: RunMeta) -> None:
+def _print_workspace(meta: RunMeta, run_dir: Path) -> None:
     if meta.worktree:
         print(f"worktree: {short(meta.worktree)}  (rama {meta.branch})")
     if meta.last_check:
@@ -38,6 +38,25 @@ def _print_workspace(meta: RunMeta) -> None:
         print(f"checks: {meta.last_check['cmd']} → {state} (correcciones automáticas: {meta.fix_rounds})")
     elif meta.mode == "write":
         print("checks: ninguno — revisa el diff con más cuidado")
+    if meta.acceptance:
+        a = meta.acceptance
+        state = "✓" if not a["failed"] else "✗ — " + a["failed"][0].splitlines()[0]
+        print(f"aceptación: {a['ok']}/{a['total']} {state}")
+    if meta.visual:
+        v = meta.visual
+        if v["status"] == "omitida":
+            print(f"vista: omitida: {v['note']}")
+        else:
+            print(f"vista: {len(v['shots'])} capturas, {v['errors']} errores → {short(run_dir / 'screens')}")
+            if v["status"] == "fallo":
+                print(v["note"])
+    if meta.prereview:
+        r = meta.prereview
+        if r.get("status") == "omitida":
+            note = " ".join(r.get("note", "").split())[:200]
+            print(f"pre-revisión: omitida — {note}")
+        else:
+            print(f"pre-revisión ({r['agent']}): {r['grave']} graves · {r['medio']} medios · {r['menor']} menores → {short(run_dir / 'review.md')}")
     if meta.diffstat:
         print(f"cambios: {meta.diffstat}")
 

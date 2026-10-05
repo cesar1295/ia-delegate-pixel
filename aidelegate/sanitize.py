@@ -1,7 +1,8 @@
 """Revisión de texto antes de enviarlo a un proveedor externo.
 
 Bloquea secretos (o los redacta, para salidas generadas como logs de tests)
-y reemplaza correos, teléfonos y tarjetas por marcadores. Los mensajes de
+y, para texto externo a la maestra, reemplaza correos, teléfonos y tarjetas
+por marcadores. Los mensajes de
 error nunca incluyen el valor encontrado, solo el tipo y la línea.
 """
 
@@ -68,13 +69,13 @@ def mask_pii(text: str) -> str:
     return _PHONE.sub("[TELÉFONO]", text)
 
 
-def sanitize(text: str, *, source: str, on_secret: OnSecret = "block") -> str:
+def sanitize(text: str, *, source: str, on_secret: OnSecret = "block", mask_personal: bool = True) -> str:
     findings = find_secrets(text)
     if findings and on_secret == "block":
         raise SecretFound(_blocked_message(source, findings))
     if findings:
         text = redact_secrets(text)
-    return mask_pii(text)
+    return mask_pii(text) if mask_personal else text
 
 
 def _blocked_message(source: str, findings: list[Finding]) -> str:

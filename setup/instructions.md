@@ -28,7 +28,8 @@ dárselo. El escalamiento automático (agy → Codex tras 2 correcciones → mae
 
 1. Para tareas con alcance claro, escribe una especificación corta (qué, dónde, criterios de aceptación) y corre
    `ai-delegate --to <agente> --kind <feature|bugfix|test|docs|...> --dir <repo> "<especificación>"`, o `--task-file spec.md`.
-2. Lee solo el resumen. Revisa con `ai-delegate diff <id> --stat` y luego el diff de los archivos que importen.
+1b. Incluye en la especificación un bloque `acceptance` con lo que debe cumplirse (comandos, textos, archivos).
+2. Lee el reporte: si aceptación, vista y pre-revisión están en verde, revisa solo las capturas y el diff --stat; abre el diff completo solo si algo está en rojo o la tarea es delicada.
 3. Si está mal, `ai-delegate feedback <id> "<correcciones concretas>"` (máx. 2 rondas) y luego `escalate <id>`.
    Si llega a ti (código de salida 3), termínalo en el worktree que indica.
 4. Si está bien, `ai-delegate merge <id>`; si no sirve, `discard <id>`. Desconfía de `sin-cambios` y de resúmenes

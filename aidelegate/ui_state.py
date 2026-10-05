@@ -54,6 +54,9 @@ def character(state: str, detail: str = "", meta: RunMeta | None = None,
 def _agent(metas: list[RunMeta], now: datetime, max_fix: int) -> dict:
     latest = metas[0] if metas else None
     if latest and alive(latest, now):
+        if latest.phase in {"aceptacion", "vista", "pre-revision"}:
+            detail = {"aceptacion": "verificando criterios", "vista": "revisando la vista", "pre-revision": "pre-revisión de código"}[latest.phase]
+            return character("checks", detail, latest)
         if latest.phase == "checks":
             return character("checks", "corriendo checks", latest)
         if (latest.phase_label or "").startswith("corrección"):

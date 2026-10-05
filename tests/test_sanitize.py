@@ -50,3 +50,10 @@ def test_masks_email_phone_and_valid_card():
 def test_does_not_mask_invalid_card_dates_or_versions():
     text = "pedido 1234567890123 del 2026-10-04, versión 1.2.15, puerto 3000"
     assert mask_pii(text) == text
+
+
+def test_master_text_preserves_pii_but_still_blocks_secrets():
+    text = 'mailto:maestra@example.com +52 55 1234 5678'
+    assert sanitize(text, source='la tarea', mask_personal=False) == text
+    with pytest.raises(SecretFound):
+        sanitize(text + ' API_TOKEN=secreto123', source='la tarea', mask_personal=False)

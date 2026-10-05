@@ -18,6 +18,7 @@ if "--version" in sys.argv:
 args = sys.argv[1:]
 prompt = args[-1]
 resume = "resume" in args
+review = "Revisa SOLO el diff contra esta tarea." in prompt
 
 
 def emit(event):
@@ -27,9 +28,14 @@ def emit(event):
 if not resume:
     emit({"type": "thread.started", "thread_id": "codex-thread-1"})
 emit({"type": "turn.started"})
-if "CUOTA" in prompt:
+if "CUOTA" in prompt or (review and "REVISION_CAIDA" in prompt):
     print("ERROR: You've hit your usage limit (429)", file=sys.stderr)
     sys.exit(1)
+if review:
+    message = "- [grave] hecho.txt:1 — problema real" if "REVISION_GRAVE" in prompt else "SIN PROBLEMAS"
+    emit({"type": "item.completed", "item": {"type": "agent_message", "text": message}})
+    emit({"type": "turn.completed", "usage": {"input_tokens": 10, "output_tokens": 5}})
+    sys.exit(0)
 if resume or "FALLA_PRIMERO" not in prompt:
     if "SIN_CAMBIOS" not in prompt:
         path = Path("hecho.txt")
