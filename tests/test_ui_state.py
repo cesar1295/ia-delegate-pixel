@@ -134,3 +134,34 @@ def test_pending_oldest_and_escalation_boundary():
     assert result["state"] == "fixing"
     assert result["run_id"] == "new"
     assert result["pending"]["run_id"] == "old"
+
+
+@pytest.mark.parametrize('name,folder', [('codex', '.codex/generated_images'), ('agy', '.gemini/antigravity-cli/brain')])
+@pytest.mark.parametrize('live,phase,expected', [(False, None, 'drawing'), (True, 'agente', 'drawing'), (True, 'checks', 'checks')])
+def test_direct_images(name, folder, live, phase, expected, isolated_home):
+    from tests.test_activity import touch
+    touch(isolated_home / folder / 'new.png', NOW - timedelta(seconds=5))
+    touch(isolated_home / folder / 'earlier.jpg', NOW - timedelta(hours=1))
+    touch(isolated_home / folder / 'yesterday.webp', NOW - timedelta(days=1))
+    runs = [meta(agent=name, phase=phase, updated_at=(NOW - timedelta(seconds=10)).isoformat())] if live else []
+    result = next(a for a in build_state(runs, None, [], NOW)['agents'] if a['name'] == name)
+    assert result['state'] == expected
+    assert result['images_today'] == 2
+    if expected == 'drawing':
+        assert result['detail'] == 'generando imágenes'
+
+
+@pytest.mark.parametrize('name', ['codex', 'agy'])
+def test_direct_session(name, monkeypatch):
+    from aidelegate import activity
+    monkeypatch.setattr(activity, 'last_activity', lambda n: NOW - timedelta(seconds=2) if n == name else None)
+    result = next(a for a in build_state([], None, [], NOW)['agents'] if a['name'] == name)
+    assert (result['state'], result['detail']) == ('working', 'trabajando fuera de ai-delegate')
+
+
+def test_round_start_survives_progress(isolated_home):
+    from tests.test_activity import touch
+    touch(isolated_home / '.codex/generated_images/new.png', NOW - timedelta(seconds=5))
+    run = meta(phase='agente', phase_started_at=(NOW - timedelta(seconds=10)).isoformat())
+    result = build_state([run], None, [], NOW)['agents'][1]
+    assert result['state'] == 'drawing'

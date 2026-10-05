@@ -33,6 +33,7 @@ class RunMeta:
     pid: int | None = None
     phase: str | None = None
     phase_label: str | None = None
+    phase_started_at: str | None = None
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     exit_code: int | None = None
     duration_s: float = 0.0

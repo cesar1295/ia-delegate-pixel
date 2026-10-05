@@ -8,6 +8,7 @@
     {label: 'TARDE-NOCHE', sky: ['#3b2a6b', '#c4517a', '#ff9a5a'], overlay: [255, 120, 80, .10]},
     {label: 'NOCHE', sky: ['#0f1430', '#16204a', '#1d2b53'], overlay: [20, 20, 60, .25]}
   ];
+  const imageColors = ['#ff5d73', '#ffd75e', '#3ddc97', '#4fa8ff', '#b28dff'];
   const offsets = [[18, 4], [30, 4], [18, 16], [30, 16]];
   const key = tile => tile.join(',');
   const same = (a, b) => key(a) === key(b);
@@ -404,7 +405,7 @@
       if (!f.screen) return;
       const [sx, sy, w, h] = f.screen;
       const x = item.x + sx, y = item.y + sy;
-      const on = ['working', 'fixing', 'checks', 'review', 'failed', 'quota'].includes(state);
+      const on = ['drawing', 'working', 'fixing', 'checks', 'review', 'failed', 'quota'].includes(state);
       if (light) {
         if (on) this.cone(x, y + h, w, 14, 4, 'rgba(79,168,255,0.10)');
         return;
@@ -421,6 +422,10 @@
         item.lines.forEach((width, i) => {
           this.rect(x, y + 2 + i * 2, Math.min(width, w), 1, '#c7ecff');
         });
+      }
+      if (state === 'drawing') {
+        const step = this.motion.matches ? 0 : Math.floor(t / 500);
+        for (let i = 0; i < 4; i++) this.rect(x + (i % 2) * (w - 3), y + Math.floor(i / 2) * (h - 3), 3, 3, imageColors[(step + i) % imageColors.length]);
       }
       if (state === 'checks') [2, 4].forEach(dy => this.rect(x + 1, y + dy, w - 2, 1, '#13111c'));
     }
@@ -465,22 +470,27 @@
           });
         }
       }
+      if (p.pose === 'seat' && p.agent.state === 'drawing' && !this.motion.matches && Math.floor(t / 300) % 2) {
+        this.rect(p.pos.x + 3, p.pos.y + 12, 2, 1, palette.s || '#ffd75e');
+      }
       if (p.carry) this.sprite(art.items[p.carry], art.palettes.items, p.pos.x + 5, p.pos.y + 12);
       const states = {sleep: 'sleep', quota: 'wait', waiting: 'question', fixing: 'alert', checks: 'wait',
         review: 'question', reviewing: 'look', failed: 'fail', celebrate: 'done'};
-      let emote = t < p.emoteUntil ? p.emote : states[p.agent.state];
+      let emote = p.agent.state === 'drawing' ? 'image' : t < p.emoteUntil ? p.emote : states[p.agent.state];
       if (p.agent.role === 'main' && p.agent.state !== 'fixing' && p.agent.pending) {
         emote = Math.floor(t / 1000) % 2 === 0 ? 'alert' : null;
       }
       if (emote) this.sprite(art.emotes[emote], art.palettes.emote, p.pos.x + 12, p.pos.y - 9);
       if (!this.motion.matches) {
-        if (['working', 'fixing', 'reviewing'].includes(p.agent.state) && art.particles[p.agent.name]
+        if ((['working', 'fixing', 'reviewing'].includes(p.agent.state) && art.particles[p.agent.name] || p.agent.state === 'drawing')
           && t - (p.lastParticle || 0) > 600 && p.particles.length < 3) {
-          p.particles.push({born: t, x: 2 + Math.random() * 10}); p.lastParticle = t;
+          p.particles.push({born: t, x: 2 + Math.random() * 10, color: p.agent.state === 'drawing' ? imageColors[Math.floor(Math.random() * imageColors.length)] : null}); p.lastParticle = t;
         }
         p.particles = p.particles.filter(item => t - item.born < 1162);
-        for (const item of p.particles) this.sprite(art.particles[p.agent.name],
-          art.palettes.particles[p.agent.name], p.pos.x + item.x, p.pos.y - (t - item.born) / 83);
+        for (const item of p.particles) {
+          if (item.color) this.rect(Math.round(p.pos.x + item.x), Math.round(p.pos.y - (t - item.born) / 83), 1, 1, item.color);
+          else this.sprite(art.particles[p.agent.name], art.palettes.particles[p.agent.name], p.pos.x + item.x, p.pos.y - (t - item.born) / 83);
+        }
         p.confetti = p.confetti.filter(item => t - item.born < 1000);
         for (const item of p.confetti) {
           const frame = (t - item.born) / 83;
