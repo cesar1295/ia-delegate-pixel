@@ -34,6 +34,8 @@ class AgyRunner(Runner):
         argv = [self.binary, "--output-format", "stream-json", "--print-timeout", "0", *MODE_FLAGS[effective_mode]]
         if self.model:
             argv += ["--model", self.model]
+        if self.effort:
+            argv += ["--effort", self.effort]
         if resume_id:
             argv += ["--conversation", resume_id]
         return [*argv, "-p", prompt]

@@ -50,8 +50,8 @@ class Runner:
     # Regla extra para el prompt según las limitaciones del CLI.
     prompt_hint = ""
 
-    def __init__(self, binary: str, home: str = "", model: str = "") -> None:
-        self.binary, self.home, self.model = binary, home, model
+    def __init__(self, binary: str, home: str = "", model: str = "", effort: str = "") -> None:
+        self.binary, self.home, self.model, self.effort = binary, home, model, effort
         self.edit: bool = True
         self.network: bool = False
         self.groups: list[str] = ["lectura"]

@@ -64,6 +64,8 @@ class RunMeta:
     source_dir: str
     workdir: str
     task: str
+    model: str = ""
+    effort: str = ""
     status: str = "running"
     created_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     pid: int | None = None

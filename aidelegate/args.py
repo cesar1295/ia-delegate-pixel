@@ -81,6 +81,8 @@ def _add_run(sub: argparse._SubParsersAction) -> None:
     run.add_argument("--timeout", help="límite por ronda: 90s, 20m, 1h (número solo = minutos)")
     run.add_argument("--resume", metavar="THREAD_ID", help="continúa una conversación existente")
     run.add_argument("--model", help="modelo específico del agente")
+    run.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max", "ultra"),
+                     help="nivel de razonamiento del agente inicial")
     run.add_argument("--dry-run", action="store_true", help="arma todo sin llamar a ningún CLI")
     run.add_argument("--print-env", action="store_true", help="muestra los nombres de variables que se heredan")
 

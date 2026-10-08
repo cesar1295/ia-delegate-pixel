@@ -141,6 +141,22 @@ def test_auto_falls_back_to_agy_when_codex_quota_is_exhausted(home, repo, capsys
     assert "agotó su cuota" in capsys.readouterr().out
 
 
+def test_model_and_effort_overrides_only_initial_agent(home, repo, monkeypatch):
+    from aidelegate import cli
+    config.write_config_updates({"agents.agy.model": "gemini-config", "agents.agy.effort": "low"})
+    calls = []
+    original = cli.runners.get
+    def tracked(name, cfg, model=None, effort=None):
+        calls.append((name, model, effort))
+        return original(name, cfg, model, effort)
+    monkeypatch.setattr(cli.runners, "get", tracked)
+    assert run("--dir", str(repo), "--check", "none", "--model", "gpt-override",
+               "--effort", "high", "CUOTA crea hecho.txt") == 0
+    assert calls[0] == ("codex", "gpt-override", "high")
+    assert ("agy", None, None) in calls
+    assert last_meta().model == "gemini-config" and last_meta().effort == "low"
+
+
 def test_explicit_target_does_not_fall_back(home, repo):
     assert run("--to", "codex", "--dir", str(repo), "--check", "none", "CUOTA") == 1
     assert last_meta().status == "cuota-agotada"

@@ -1,5 +1,6 @@
 'use strict';
 (() => {
+  const EFFORT_LABELS = {low: 'Bajo', medium: 'Medio', high: 'Alto', xhigh: 'Muy alto', max: 'Máximo', ultra: 'Ultra'};
   class OfficePanels {
     constructor(api) {
       this.api = api;
@@ -46,7 +47,7 @@
           escalate_after: 2},
         limits: {max_fix_rounds: 3, max_review_rounds: 2, timeout_min: 30, keep_days: 7},
         agents: Object.fromEntries(this.api.agents().map(a => [a.name,
-          {display: a.display, color: a.color, enabled: true, model: '', daily_token_budget: 0,
+          {display: a.display, color: a.color, enabled: true, model: '', effort: '', daily_token_budget: 0,
            type: a.type || a.name,
            permissions: a.name === 'codex' ? {edit: true, network: false}
              : a.name === 'agy' ? {edit: true, groups: ['lectura']}
@@ -87,6 +88,7 @@
         this.changes = {};
         this.api.onConfig(this.config);
         this.render();
+        this.loadModels();
       } catch (error) { this.root.replaceChildren(this.api.node('p', 'error', `Error de red: ${error.message}`)); }
       finally { this.loading = false; }
     }
@@ -159,9 +161,111 @@
       button.type = 'button';
       return button;
     }
+    setChange(path, value) {
+      if (value === (this.get(path) ?? '')) delete this.changes[path];
+      else this.changes[path] = value;
+      this.save.disabled = !Object.keys(this.changes).length;
+      this.status.textContent = '';
+    }
+    modelFields(card, name, agent) {
+      const path = `agents.${name}.model`;
+      const select = this.field(card, 'Modelo', path, 'select', {choices: [['', 'cargando modelos…']]});
+      select.disabled = true;
+      const wrapper = this.fields.get(path).wrapper;
+      const manual = document.createElement('input');
+      manual.type = 'text'; manual.placeholder = 'nombre exacto del modelo'; manual.hidden = true;
+      manual.addEventListener('input', () => this.setChange(path, manual.value));
+      wrapper.append(manual);
+      const effortPath = `agents.${name}.effort`;
+      const effort = this.field(card, 'Razonamiento', effortPath, 'select', {choices: [['', 'Predeterminado']]});
+      this.fields.get(effortPath).wrapper.hidden = true;
+      if ((agent.type || name) === 'agy') {
+        const refresh = this.button('↻');
+        refresh.setAttribute('aria-label', 'Actualizar lista de modelos');
+        refresh.onclick = async () => { refresh.disabled = true; await this.loadModels(name, true); refresh.disabled = false; };
+        wrapper.querySelector('label').after(refresh);
+      }
+      return {select, manual, effort, wrapper};
+    }
+    async loadModels(name = '', refresh = false) {
+      const query = name ? `?agent=${encodeURIComponent(name)}${refresh ? '&refresh=1' : ''}` : '';
+      try {
+        const catalogs = this.api.demo ? Object.fromEntries(Object.keys(this.config.agents).map(n =>
+          [n, {models: [], default: {model: '', label: '', effort: ''}, source: 'ninguno'}]))
+          : await (await fetch(`/api/models${query}`, {cache: 'no-store'})).json();
+        for (const [agentName, catalog] of Object.entries(catalogs)) this.showModels(agentName, catalog);
+      } catch (error) {
+        for (const agentName of name ? [name] : Object.keys(this.config.agents))
+          this.showModels(agentName, {models: [], error: error.message});
+      }
+    }
+    showModels(name, catalog) {
+      const controls = this.modelControls?.get(name);
+      if (!controls) return;
+      let {select} = controls;
+      const {manual, effort, wrapper} = controls;
+      const path = `agents.${name}.model`, effortPath = `agents.${name}.effort`;
+      const selectedModel = this.changes[path] ?? this.get(path) ?? '';
+      const selectedEffort = this.changes[effortPath] ?? this.get(effortPath) ?? '';
+      if (catalog.error || !catalog.models?.length) {
+        const input = document.createElement('input'); input.type = 'text'; input.value = selectedModel;
+        input.placeholder = 'Predeterminado'; input.id = select.id; input.name = path;
+        input.addEventListener('input', () => this.setChange(path, input.value));
+        select.replaceWith(input); controls.select = input;
+        this.fields.get(path).input = input; manual.hidden = true;
+        this.fields.get(effortPath).wrapper.hidden = true;
+        wrapper.querySelector('.models-error')?.remove();
+        wrapper.append(this.api.node('div', 'permissions-help models-error', catalog.error || 'No hay modelos disponibles'));
+        return;
+      }
+      wrapper.querySelector('.models-error')?.remove();
+      if (select.tagName !== 'SELECT') {
+        const restored = document.createElement('select'); restored.id = select.id; restored.name = path;
+        select.replaceWith(restored); select = restored; controls.select = restored;
+        this.fields.get(path).input = restored;
+      }
+      wrapper.querySelectorAll('.permissions-help').forEach(item => item.remove());
+      select.replaceChildren();
+      const add = (value, label) => { const option = document.createElement('option'); option.value = value;
+        option.textContent = label; select.append(option); };
+      add('', catalog.default?.label || catalog.default?.model
+        ? `Predeterminado (${catalog.default.label || catalog.default.model})` : 'Predeterminado del CLI');
+      catalog.models.forEach(model => add(model.id, model.label));
+      add('__other__', 'Otro…');
+      select.disabled = false;
+      select.value = selectedModel && !catalog.models.some(m => m.id === selectedModel) ? '__other__' : selectedModel;
+      manual.value = select.value === '__other__' ? selectedModel : '';
+      manual.hidden = select.value !== '__other__';
+      const updateEffort = () => {
+        const id = select.value === '__other__' ? manual.value : select.value || catalog.default?.model;
+        const model = catalog.models.find(m => m.id === id);
+        const levels = model?.efforts || [];
+        const field = this.fields.get(effortPath);
+        field.wrapper.hidden = !levels.length;
+        effort.replaceChildren();
+        const defaultLevel = catalog.default?.effort || model?.default_effort || '';
+        const label = defaultLevel ? `Predeterminado (${EFFORT_LABELS[defaultLevel] || defaultLevel})` : 'Predeterminado';
+        const option = document.createElement('option'); option.value = ''; option.textContent = label; effort.append(option);
+        const labels = EFFORT_LABELS;
+        levels.forEach(level => { const item = document.createElement('option'); item.value = level;
+          item.textContent = labels[level] || level; effort.append(item); });
+        const value = this.changes[effortPath] ?? selectedEffort;
+        effort.value = levels.includes(value) ? value : '';
+        if (value && !levels.includes(value)) this.setChange(effortPath, '');
+      };
+      select.onchange = () => {
+        manual.hidden = select.value !== '__other__';
+        this.setChange(path, select.value === '__other__' ? manual.value : select.value);
+        updateEffort();
+        if (!manual.hidden) manual.focus();
+      };
+      manual.addEventListener('input', updateEffort);
+      updateEffort();
+    }
     render() {
       const {node} = this.api;
       this.fields.clear();
+      this.modelControls = new Map();
       this.form = node('form', 'settings-form');
       this.form.addEventListener('submit', event => { event.preventDefault(); this.submit(); });
       this.root.replaceChildren(this.form);
@@ -184,6 +288,7 @@
       }
       const agentChoices = agents.map(([name, a]) => [name, a.display || name]);
       const masterSection = this.section('IA maestra');
+      masterSection.append(node('p', 'permissions-help', 'La maestra usa el modelo de tu sesión (Claude Desktop o la terminal); lo de abajo aplica cuando trabaja como agente.'));
       for (const [name, agent] of detectedAgents) {
         const detected = this.detected.find(d => d.name === name);
         const card = node('div', 'settings-card');
@@ -208,6 +313,8 @@
           }
         }
         if (name === master && name === 'claude') this.renderClaudeBudget(card);
+        if (name === master && this.config.agents?.[name])
+          this.modelControls.set(name, this.modelFields(card, name, agent));
         masterSection.append(card);
       }
       const distribution = this.section('Escalamiento');
@@ -226,7 +333,7 @@
         this.field(card, 'Activo', `agents.${name}.enabled`, 'checkbox');
         this.field(card, 'Nombre visible', `agents.${name}.display`);
         this.field(card, 'Color', `agents.${name}.color`, 'color');
-        this.field(card, 'Modelo', `agents.${name}.model`, 'text', {placeholder: 'Predeterminado'});
+        this.modelControls.set(name, this.modelFields(card, name, agent));
         if (name === 'agy') this.field(card, 'Presupuesto diario de tokens',
           `agents.${name}.daily_token_budget`, 'number', {min: 0, default: 0});
         if (name === 'claude') this.renderClaudeBudget(card);
@@ -254,7 +361,6 @@
       this.field(card, 'Presupuesto de tokens por 5 h', 'agents.claude.five_hour_token_budget',
         'number', {min: 0, default: 0, suffix: '0 = automático'});
       const {budget, samples} = this.claudeCalibration || {};
-      // TODO(diseño): texto de calibración en Plex Mono 11px y --muted.
       card.append(this.api.node('p', 'permissions-help', budget
         ? `Automático: ${(budget / 1000000).toFixed(1)} M calibrado con ${samples} mediciones`
         : 'Automático: sin mediciones todavía (usa Claude Code en la terminal una vez para calibrar)'));

@@ -14,6 +14,11 @@ if "--version" in sys.argv:
     print("agy 0.1.0")
     sys.exit(0)
 
+if sys.argv[1:] == ["models"]:
+    print("gemini-3.8-flash-high\tGemini 3.8 Flash (High)")
+    print("gemini-3.8-pro\tGemini 3.8 Pro")
+    sys.exit(0)
+
 emit({"event": "init", "conversation_id": "agy-conv-1", "init": {"cwd": str(Path.cwd())}})
 if "NIEGA_PRIMERO" in sys.argv[-1] and "--conversation" not in sys.argv:
     emit({"event": "result", "result": {"status": "SUCCESS", "response": "",

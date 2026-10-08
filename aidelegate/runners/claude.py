@@ -17,6 +17,8 @@ class ClaudeRunner(Runner):
             args += ["--resume", resume_id]
         if self.model:
             args += ["--model", self.model]
+        if self.effort:
+            args += ["--effort", self.effort]
         return args
 
     def parse_event(self, event: dict, result: AgentResult, deltas: list[str]) -> None:
