@@ -188,6 +188,14 @@ def write_config_updates(changes: dict[str, Any], path: Path | None = None) -> d
             sec = ""
             k = key
 
+        if ".task_models." in sec and value == "":
+            if sec in sections:
+                sections[sec] = re.sub(rf"(?m)^\s*{re.escape(k)}\s*=.*(?:\n|$)", "", sections[sec])
+                if not re.search(r"(?m)^\s*(?:model|effort)\s*=", sections[sec]):
+                    del sections[sec]
+                    order.remove(sec)
+            continue
+
         if sec not in sections:
             sections[sec] = ""
             order.append(sec)

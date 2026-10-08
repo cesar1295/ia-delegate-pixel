@@ -29,7 +29,7 @@ def run(meta, run_dir: Path, cfg: dict, timeout_s: int):
     rounds = (meta.prereview or {}).get('rounds', 0) + 1
     info = dict(agent=name, grave=0, medio=0, menor=0, rounds=rounds)
     try:
-        runner = runners.get(name, cfg)
+        runner = runners.get(name, cfg, kind="review")
         runner.ensure_available()
         runner.edit = False
         text = meta.task + '\n\n' + (prompt.load_design_spec(meta) or '') + '\n\n' + '\n'.join(meta.acceptance_criteria) + '\n\n' + RULE

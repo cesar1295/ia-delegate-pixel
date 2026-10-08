@@ -11,6 +11,26 @@ from pathlib import Path
 
 from .config import data_dir
 
+CATEGORIES = {
+    "codigo": ("Código", ["feature", "bugfix", "refactor", "api", "test", "mock", "chore", "security"]),
+    "diseno": ("Diseño", ["design"]),
+    "imagenes": ("Imágenes", ["image"]),
+    "textos": ("Textos", ["docs", "i18n"]),
+    "revision": ("Revisión e investigación", ["review", "research", "summarize"]),
+}
+
+
+def category_of(kind: str) -> str | None:
+    return next((category for category, (_, kinds) in CATEGORIES.items() if kind in kinds), None)
+
+
+def resolve(name: str, kind: str, cfg: dict, cli_model: str = "", cli_effort: str = "") -> tuple[str, str]:
+    agent = cfg.get("agents", {}).get(name, {})
+    category = category_of(kind)
+    override = agent.get("task_models", {}).get(category, {}) if category else {}
+    return (cli_model or override.get("model") or agent.get("model") or "",
+            cli_effort or override.get("effort") or agent.get("effort") or "")
+
 
 def _read_json(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))

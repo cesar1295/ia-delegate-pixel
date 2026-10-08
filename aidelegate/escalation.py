@@ -57,13 +57,13 @@ def escalate_run(
     prompt_text = sanitize(esc_text, source="el prompt de escalamiento", mask_personal=False)
 
     if session is not None:
-        session.runner = runners.get(nxt, cfg)
+        session.runner = runners.get(nxt, cfg, kind=meta.kind)
         meta.model, meta.effort = session.runner.model, session.runner.effort
         session.runner.ensure_available()
         return loop.agent_round(session, prompt_text, "escalamiento")
 
     meta.status = "running"
-    runner = runners.get(nxt, cfg)
+    runner = runners.get(nxt, cfg, kind=meta.kind)
     meta.model, meta.effort = runner.model, runner.effort
     runner.ensure_available()
     sess = loop.Session(

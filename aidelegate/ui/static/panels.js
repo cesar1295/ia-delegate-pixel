@@ -1,5 +1,11 @@
 'use strict';
 (() => {
+  const TASK_CATEGORIES = {
+    codigo: ['Código', 'funcionalidades, bugs, refactors, endpoints, pruebas, datos de prueba, mantenimiento, seguridad'],
+    diseno: ['Diseño', 'diseño'], imagenes: ['Imágenes', 'imágenes'],
+    textos: ['Textos', 'documentación, traducciones'],
+    revision: ['Revisión e investigación', 'revisiones, investigación, resúmenes']
+  };
   const EFFORT_LABELS = {low: 'Bajo', medium: 'Medio', high: 'Alto', xhigh: 'Muy alto', max: 'Máximo', ultra: 'Ultra'};
   class OfficePanels {
     constructor(api) {
@@ -168,24 +174,44 @@
       this.status.textContent = '';
     }
     modelFields(card, name, agent) {
-      const path = `agents.${name}.model`;
-      const select = this.field(card, 'Modelo', path, 'select', {choices: [['', 'cargando modelos…']]});
+      const controls = new Map();
+      const general = this.modelPair(card, `agents.${name}`, 'Modelo', 'Razonamiento');
+      general.effort.addEventListener('change', () => this.modelCatalogs?.get(name) && this.showModels(name, this.modelCatalogs.get(name)));
+      controls.set('', general);
+      if ((agent.type || name) === 'agy') {
+        const refresh = this.button('↻');
+        refresh.setAttribute('aria-label', 'Actualizar lista de modelos');
+        refresh.onclick = async () => { refresh.disabled = true; await this.loadModels(name, true); refresh.disabled = false; };
+        general.wrapper.querySelector('label').after(refresh);
+      }
+      const personalized = Object.values(agent.task_models || {}).filter(row => row.model || row.effort).length;
+      const details = document.createElement('details');
+      details.open = personalized > 0;
+      details.append(this.api.node('summary', '', `Modelo según el tipo de tarea${personalized ? ` · ${personalized} personalizados` : ''}`));
+      for (const [category, [label, kinds]] of Object.entries(TASK_CATEGORIES)) {
+        const row = this.api.node('div', 'task-model-row');
+        const heading = this.api.node('div', 'task-model-heading', label);
+        heading.append(this.api.node('div', 'task-model-kinds', kinds));
+        row.append(heading);
+        controls.set(category, this.modelPair(row, `agents.${name}.task_models.${category}`, 'Modelo', 'Razonamiento'));
+        details.append(row);
+      }
+      card.append(details);
+      return controls;
+    }
+    modelPair(parent, prefix, modelTitle, effortTitle) {
+      const path = `${prefix}.model`;
+      const select = this.field(parent, modelTitle, path, 'select', {choices: [['', 'cargando modelos…']]});
       select.disabled = true;
       const wrapper = this.fields.get(path).wrapper;
       const manual = document.createElement('input');
       manual.type = 'text'; manual.placeholder = 'nombre exacto del modelo'; manual.hidden = true;
       manual.addEventListener('input', () => this.setChange(path, manual.value));
       wrapper.append(manual);
-      const effortPath = `agents.${name}.effort`;
-      const effort = this.field(card, 'Razonamiento', effortPath, 'select', {choices: [['', 'Predeterminado']]});
+      const effortPath = `${prefix}.effort`;
+      const effort = this.field(parent, effortTitle, effortPath, 'select', {choices: [['', 'Predeterminado']]});
       this.fields.get(effortPath).wrapper.hidden = true;
-      if ((agent.type || name) === 'agy') {
-        const refresh = this.button('↻');
-        refresh.setAttribute('aria-label', 'Actualizar lista de modelos');
-        refresh.onclick = async () => { refresh.disabled = true; await this.loadModels(name, true); refresh.disabled = false; };
-        wrapper.querySelector('label').after(refresh);
-      }
-      return {select, manual, effort, wrapper};
+      return {select, manual, effort, wrapper, path, effortPath, category: prefix.split('.').at(-1)};
     }
     async loadModels(name = '', refresh = false) {
       const query = name ? `?agent=${encodeURIComponent(name)}${refresh ? '&refresh=1' : ''}` : '';
@@ -202,14 +228,29 @@
     showModels(name, catalog) {
       const controls = this.modelControls?.get(name);
       if (!controls) return;
+      if (!this.modelCatalogs) this.modelCatalogs = new Map();
+      this.modelCatalogs.set(name, catalog);
+      const general = controls.get('');
+      general.onBaseChange = () => this.showModels(name, catalog);
+      this.showModelPair(general, catalog);
+      for (const [category, pair] of controls) {
+        if (!category) continue;
+        this.showModelPair(pair, catalog, general);
+      }
+    }
+    showModelPair(controls, catalog, general = null) {
       let {select} = controls;
-      const {manual, effort, wrapper} = controls;
-      const path = `agents.${name}.model`, effortPath = `agents.${name}.effort`;
+      const {manual, effort, wrapper, path, effortPath} = controls;
       const selectedModel = this.changes[path] ?? this.get(path) ?? '';
       const selectedEffort = this.changes[effortPath] ?? this.get(effortPath) ?? '';
+      const modelLabel = id => catalog.models?.find(m => m.id === id)?.label || id;
+      const generalModel = general && (this.changes[general.path] ?? this.get(general.path) ?? '');
+      const baseModel = generalModel || catalog.default?.model || '';
+      const baseLabel = modelLabel(baseModel) || catalog.default?.label || 'predeterminado';
       if (catalog.error || !catalog.models?.length) {
         const input = document.createElement('input'); input.type = 'text'; input.value = selectedModel;
-        input.placeholder = 'Predeterminado'; input.id = select.id; input.name = path;
+        input.placeholder = general ? `Igual que el general (${baseLabel})` : 'Predeterminado';
+        input.id = select.id; input.name = path;
         input.addEventListener('input', () => this.setChange(path, input.value));
         select.replaceWith(input); controls.select = input;
         this.fields.get(path).input = input; manual.hidden = true;
@@ -228,7 +269,7 @@
       select.replaceChildren();
       const add = (value, label) => { const option = document.createElement('option'); option.value = value;
         option.textContent = label; select.append(option); };
-      add('', catalog.default?.label || catalog.default?.model
+      add('', general ? `Igual que el general (${baseLabel})` : catalog.default?.label || catalog.default?.model
         ? `Predeterminado (${catalog.default.label || catalog.default.model})` : 'Predeterminado del CLI');
       catalog.models.forEach(model => add(model.id, model.label));
       add('__other__', 'Otro…');
@@ -237,18 +278,19 @@
       manual.value = select.value === '__other__' ? selectedModel : '';
       manual.hidden = select.value !== '__other__';
       const updateEffort = () => {
-        const id = select.value === '__other__' ? manual.value : select.value || catalog.default?.model;
+        const id = select.value === '__other__' ? manual.value : select.value || baseModel || catalog.default?.model;
         const model = catalog.models.find(m => m.id === id);
         const levels = model?.efforts || [];
         const field = this.fields.get(effortPath);
         field.wrapper.hidden = !levels.length;
         effort.replaceChildren();
-        const defaultLevel = catalog.default?.effort || model?.default_effort || '';
-        const label = defaultLevel ? `Predeterminado (${EFFORT_LABELS[defaultLevel] || defaultLevel})` : 'Predeterminado';
+        const generalEffort = general && (this.changes[general.effortPath] ?? this.get(general.effortPath) ?? '');
+        const defaultLevel = generalEffort || catalog.default?.effort || model?.default_effort || '';
+        const label = general ? `Igual que el general (${EFFORT_LABELS[defaultLevel] || defaultLevel || 'predeterminado'})`
+          : defaultLevel ? `Predeterminado (${EFFORT_LABELS[defaultLevel] || defaultLevel})` : 'Predeterminado';
         const option = document.createElement('option'); option.value = ''; option.textContent = label; effort.append(option);
-        const labels = EFFORT_LABELS;
         levels.forEach(level => { const item = document.createElement('option'); item.value = level;
-          item.textContent = labels[level] || level; effort.append(item); });
+          item.textContent = EFFORT_LABELS[level] || level; effort.append(item); });
         const value = this.changes[effortPath] ?? selectedEffort;
         effort.value = levels.includes(value) ? value : '';
         if (value && !levels.includes(value)) this.setChange(effortPath, '');
@@ -257,9 +299,10 @@
         manual.hidden = select.value !== '__other__';
         this.setChange(path, select.value === '__other__' ? manual.value : select.value);
         updateEffort();
+        controls.onBaseChange?.();
         if (!manual.hidden) manual.focus();
       };
-      manual.addEventListener('input', updateEffort);
+      manual.oninput = () => { updateEffort(); controls.onBaseChange?.(); };
       updateEffort();
     }
     render() {
