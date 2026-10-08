@@ -22,6 +22,8 @@ class CodexRunner(Runner):
             common += ["-c", "sandbox_workspace_write.network_access=true"]
         if self.model:
             common += ["-m", self.model]
+        if self.effort:
+            common += ["-c", f'model_reasoning_effort="{self.effort}"']
         if resume_id:
             return [self.binary, "exec", "resume", *common, resume_id, prompt]
         return [self.binary, "exec", *common, "-C", str(cwd), prompt]

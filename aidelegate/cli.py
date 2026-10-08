@@ -64,7 +64,7 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     _require_design_spec(args, kind, cfg)
     mode = args.mode or routing.default_mode(kind, cfg)
     agent, reason = routing.resolve_target_with_reason(args.to, kind, cfg)
-    runner = runners.get(agent, cfg, args.model)
+    runner = runners.get(agent, cfg, args.model, args.effort)
     if args.print_env:
         print("\n".join(sorted(runner.env())))
         return 0
@@ -75,6 +75,7 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     # En disco y hacia el agente solo va la versión limpia de la tarea.
     safe_task = sanitize(task, source="la tarea", on_secret="redact", mask_personal=False)
     meta = _new_meta(agent, mode, kind, safe_task, source, root, args.resume, reason)
+    meta.model, meta.effort = runner.model, runner.effort
     run_dir = runs.create(meta)
     try:
         sanitize(task, source="la tarea", mask_personal=False)  # bloquea si trae secretos
@@ -116,9 +117,10 @@ def _attempt(session: loop.Session, cfg: dict[str, Any], model: str | None, name
     meta = session.meta
     if name != meta.agent:
         print(f"aviso: {meta.agent} agotó su cuota; reintentando con {name}", file=sys.stderr)
-        session.runner = runners.get(name, cfg, model)
+        session.runner = runners.get(name, cfg)
         session.runner.ensure_available()
         meta.fallback_from, meta.agent, meta.thread_id = meta.agent, name, None
+        meta.model, meta.effort = session.runner.model, session.runner.effort
         runs.add_event(meta, "assigned", meta.fallback_from)
     text = prompt.compose(replace(spec, agent_hint=session.runner.prompt_hint))
     return loop.drive(session, sanitize(text, source="el prompt", mask_personal=False), "tarea")
@@ -244,6 +246,7 @@ def cmd_escalate(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 def _continue(meta: RunMeta, run_dir: Path, cfg: dict[str, Any], text: str, label: str) -> int:
     meta.status = "running"
     runner = runners.get(meta.agent, cfg)
+    meta.model, meta.effort = runner.model, runner.effort
     runner.ensure_available()
     loop.drive(_session(meta, run_dir, cfg, runner, None, None), text, label)
     report.print_run(meta, run_dir, cfg["limits"]["summary_lines"])

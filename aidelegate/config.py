@@ -66,10 +66,10 @@ DEFAULTS: dict[str, Any] = {
     },
     # home vacío = tu HOME normal (perfil ya autenticado)
     "agents": {
-        "claude": {"five_hour_token_budget": 0, "type": "claude", "bin": "auto", "display": "Claude", "color": "#d97757", "quota": "none", "role_text": "funcionalidades, especificaciones y revisiones; diseño visual", "permissions": {"edit": True}},
-        "codex": {"bin": "codex", "home": "", "model": "", "type": "codex",
+        "claude": {"five_hour_token_budget": 0, "model": "", "effort": "", "type": "claude", "bin": "auto", "display": "Claude", "color": "#d97757", "quota": "none", "role_text": "funcionalidades, especificaciones y revisiones; diseño visual", "permissions": {"edit": True}},
+        "codex": {"bin": "codex", "home": "", "model": "", "effort": "", "type": "codex",
                   "display": "Codex", "color": "#3ddc97", "quota": "codex", "role_text": "funcionalidades, bugs, refactors, endpoints, implementar especificaciones de diseño, revisiones de código", "permissions": {"edit": True, "network": False}},
-        "agy": {"bin": "agy", "home": "", "model": "", "type": "agy",
+        "agy": {"bin": "agy", "home": "", "model": "", "effort": "", "type": "agy",
                 "display": "agy", "color": "#7b8cff", "quota": "budget", "daily_token_budget": 0, "role_text": "tareas acotadas (tests sencillos, docs, datos de prueba, i18n), resumir repos, investigación web e imágenes; en la terminal solo tiene comandos de lectura", "permissions": {"edit": True, "groups": ["lectura"]}},
     },
     # "/ruta/al/repo" = { check = "npm run lint && npm test" }
@@ -226,4 +226,3 @@ def write_config_updates(changes: dict[str, Any], path: Path | None = None) -> d
 
     path.write_text(text, encoding="utf-8")
     return load(path)
-

@@ -8,19 +8,44 @@ import json
 import mimetypes
 import re
 import secrets
+import time
 import webbrowser
 from dataclasses import asdict
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import reconcile, config, detect, install, quota, routing, runs, stats, worktree
+from . import reconcile, config, detect, install, models, quota, routing, runs, stats, worktree
 from .errors import DelegateError
 from .ui_state import build_state
 
 STATIC = Path(__file__).parent / "ui" / "static"
+_MODEL_CACHE: dict[tuple, tuple[float, dict]] = {}
+_AGY_STATE_CACHE: dict[tuple, tuple[float, dict]] = {}
+
+
+def _catalog(name: str, cfg: dict, *, refresh: bool = False, state: bool = False) -> dict:
+    now = time.monotonic()
+    agent = cfg.get("agents", {}).get(name, {})
+    key = (name, agent.get("type"), agent.get("bin"), agent.get("home"),
+           str(Path.home()), str(config.data_dir()))
+    cached = _MODEL_CACHE.get(key)
+    if not refresh and cached and now - cached[0] < 60:
+        return cached[1]
+    if state and cfg.get("agents", {}).get(name, {}).get("type", name) == "agy":
+        # La consulta periódica de estado nunca ejecuta agy: solo lee su caché en disco.
+        state_cached = _AGY_STATE_CACHE.get(key)
+        if state_cached and now - state_cached[0] < 60:
+            return state_cached[1]
+        value = models.catalog(name, cfg, offline=True)
+        _AGY_STATE_CACHE[key] = (now, value)
+        return value
+    else:
+        value = models.catalog(name, cfg, refresh=refresh)
+    _MODEL_CACHE[key] = (now, value)
+    return value
 
 
 def _claude_status() -> dict | None:
@@ -66,7 +91,7 @@ def _is_allowed_config_key(k: str) -> bool:
         return True
     if k.startswith("agents."):
         parts = k.split(".")
-        if len(parts) == 3 and parts[2] in {"enabled", "display", "color", "model", "daily_token_budget"}:
+        if len(parts) == 3 and parts[2] in {"enabled", "display", "color", "model", "effort", "daily_token_budget"}:
             return True
     return False
 
@@ -111,8 +136,11 @@ def _validate_change_value(k: str, v: Any, cfg: dict[str, Any]) -> str | None:
             if not isinstance(v, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", v):
                 return f"agents.{agent_name}.color debe tener formato #rrggbb"
         elif field == "model":
-            if not isinstance(v, str) or len(v) > 60:
-                return f"agents.{agent_name}.model debe ser string de hasta 60 caracteres"
+            if not isinstance(v, str) or len(v) > 80 or not re.fullmatch(r"[A-Za-z0-9._:/\[\]-]*", v):
+                return f"agents.{agent_name}.model debe tener hasta 80 caracteres válidos"
+        elif field == "effort":
+            if not isinstance(v, str) or v not in ("", "low", "medium", "high", "xhigh", "max", "ultra"):
+                return f"agents.{agent_name}.effort inválido"
         elif field in {"daily_token_budget", "five_hour_token_budget"}:
             if not isinstance(v, int) or isinstance(v, bool) or v < 0:
                 return f"agents.{agent_name}.{field} debe ser entero >= 0"
@@ -162,8 +190,27 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/state":
                 reconcile.background()
                 cfg = config.load()
-                self._json(build_state(runs.recent(1_000_000), _claude_status(), stats.read_rows(), datetime.now(),
-                                       max_fix_rounds=cfg["limits"]["max_fix_rounds"], cfg=cfg))
+                state = build_state(runs.recent(1_000_000), _claude_status(), stats.read_rows(), datetime.now(),
+                                    max_fix_rounds=cfg["limits"]["max_fix_rounds"], cfg=cfg)
+                for agent in state["agents"]:
+                    name = agent["name"]
+                    model = cfg["agents"].get(name, {}).get("model", "")
+                    catalog = _catalog(name, cfg, state=True)
+                    default = catalog.get("default", {})
+                    agent["model_label"] = (next((row["label"] for row in catalog["models"] if row["id"] == model), model)
+                                            if model else default.get("label") or "predeterminado")
+                    agent["effort"] = cfg["agents"].get(name, {}).get("effort", "") or default.get("effort", "")
+                self._json(state)
+            elif path == "/api/models":
+                cfg = config.load()
+                query = parse_qs(urlsplit(self.path).query)
+                name = query.get("agent", [""])[0]
+                if name and name not in cfg.get("agents", {}):
+                    self._json({"error": f"Agente desconocido: {name}"}, 404)
+                else:
+                    refresh = query.get("refresh", [""])[0] == "1"
+                    self._json({n: _catalog(n, cfg, refresh=refresh and n == name)
+                                for n in ([name] if name else cfg.get("agents", {}))})
             elif path == "/api/config":
                 cfg = config.load()
                 detected = detect.detect_all()

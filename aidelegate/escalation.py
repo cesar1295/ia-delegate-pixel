@@ -36,6 +36,7 @@ def escalate_run(
 
     if nxt == routing.MAIN:
         meta.agent, meta.status = routing.MAIN, "escalado-a-main"
+        meta.model, meta.effort = "", ""
         runs.add_event(meta, "assigned", previous)
         runs.save(meta, run_dir)
         where = f"{report.short(meta.worktree)} (rama {meta.branch})" if meta.worktree else meta.workdir
@@ -57,11 +58,13 @@ def escalate_run(
 
     if session is not None:
         session.runner = runners.get(nxt, cfg)
+        meta.model, meta.effort = session.runner.model, session.runner.effort
         session.runner.ensure_available()
         return loop.agent_round(session, prompt_text, "escalamiento")
 
     meta.status = "running"
     runner = runners.get(nxt, cfg)
+    meta.model, meta.effort = runner.model, runner.effort
     runner.ensure_available()
     sess = loop.Session(
         meta=meta,

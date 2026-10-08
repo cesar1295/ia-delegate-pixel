@@ -120,6 +120,8 @@
     const title = node('span','team-name',agent.display.toUpperCase()); title.style.color=agent.color;
     heading.append(title,pill(stateLabels[safeState(name)],stateColor(safeState(name))));
     info.append(heading);
+    const effortLabels = {low:'Bajo', medium:'Medio', high:'Alto', xhigh:'Muy alto', max:'Máximo', ultra:'Ultra'};
+    info.append(node('div','team-time',`${agent.model_label || 'predeterminado'}${agent.effort ? ` · ${effortLabels[agent.effort] || agent.effort}` : ''}`));
     if (agent.detail) info.append(node('div','team-detail',agent.detail));
     if (agent.role === 'main' && agent.pending) {
       const hhmm = formatHHMM(agent.pending.since);
@@ -239,6 +241,7 @@
     content.replaceChildren(node('div','detail-id',run.run_id || ''));
     const pills=node('div','detail-pills');pills.append(statusPill(run.status),pill(run.agent || '',
     accents[run.agent] || '--muted'),pill(run.kind || '','--muted'),pill(run.mode || '','--muted'));
+    pills.append(pill(run.model || 'predeterminado', '--muted'));
     content.append(pills);
     if(run.closed_reason)content.append(node('p','closed-reason',`Cerrada sola: ${run.closed_reason}`));
     content.append(node('p','',run.repo || ''),node('p','',

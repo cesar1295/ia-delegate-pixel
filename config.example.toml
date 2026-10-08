@@ -18,10 +18,12 @@
 
 [agents.codex]
 # model = ""             # vacío = el de tu config de Codex
+# effort = ""            # vacío = el predeterminado del CLI
 # home = ""              # perfil aislado opcional (otra cuenta)
 
 [agents.agy]
 # model = ""
+# effort = ""
 # daily_token_budget = 0  # desconocido; configura un presupuesto para estimar porcentaje
 
 # Checks por proyecto cuando la detección automática no basta:
@@ -31,6 +33,7 @@
 [agents.claude]
 # bin = "auto"            # detecta también Claude Desktop
 # model = ""
+# effort = ""
 
 [review]
 enabled = true

@@ -15,6 +15,7 @@ def short(path: str | Path) -> str:
 
 def print_run(meta: RunMeta, run_dir: Path, max_lines: int) -> None:
     print(f"{meta.agent} | {meta.mode} | {meta.repo} | {meta.status} | {round(meta.duration_s)}s")
+    print(f"modelo: {meta.model or 'predeterminado'} · {meta.effort}")
     if meta.target_reason:
         print(f"elegido: {meta.agent} ({meta.target_reason})")
     if meta.fallback_from:
