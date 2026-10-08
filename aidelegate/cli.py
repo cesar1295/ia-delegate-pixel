@@ -64,6 +64,7 @@ def cmd_run(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
     _require_design_spec(args, kind, cfg)
     mode = args.mode or routing.default_mode(kind, cfg)
     agent, reason = routing.resolve_target_with_reason(args.to, kind, cfg)
+    cfg = {**cfg, "_task_kind": kind}
     runner = runners.get(agent, cfg, args.model, args.effort)
     if args.print_env:
         print("\n".join(sorted(runner.env())))
@@ -245,6 +246,7 @@ def cmd_escalate(args: argparse.Namespace, cfg: dict[str, Any]) -> int:
 
 def _continue(meta: RunMeta, run_dir: Path, cfg: dict[str, Any], text: str, label: str) -> int:
     meta.status = "running"
+    cfg = {**cfg, "_task_kind": meta.kind}
     runner = runners.get(meta.agent, cfg)
     meta.model, meta.effort = runner.model, runner.effort
     runner.ensure_available()

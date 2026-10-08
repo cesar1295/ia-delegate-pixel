@@ -241,7 +241,8 @@
     content.replaceChildren(node('div','detail-id',run.run_id || ''));
     const pills=node('div','detail-pills');pills.append(statusPill(run.status),pill(run.agent || '',
     accents[run.agent] || '--muted'),pill(run.kind || '','--muted'),pill(run.mode || '','--muted'));
-    pills.append(pill(run.model || 'predeterminado', '--muted'));
+    pills.append(pill(`${run.model_label || run.model || 'predeterminado'}${run.effort ? ` · ${
+      {low: 'Bajo', medium: 'Medio', high: 'Alto', xhigh: 'Muy alto', max: 'Máximo', ultra: 'Ultra'}[run.effort] || run.effort}` : ''}`, '--muted'));
     content.append(pills);
     if(run.closed_reason)content.append(node('p','closed-reason',`Cerrada sola: ${run.closed_reason}`));
     content.append(node('p','',run.repo || ''),node('p','',

@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import reconcile, config, detect, install, models, quota, routing, runs, stats, worktree
 from .errors import DelegateError
-from .ui_state import build_state
+from .ui_state import alive as ui_alive, build_state
 
 STATIC = Path(__file__).parent / "ui" / "static"
 _MODEL_CACHE: dict[tuple, tuple[float, dict]] = {}
@@ -65,6 +65,9 @@ def run_detail(ref: str) -> dict:
         raise DelegateError(f"No encuentro la corrida '{ref}'. Usa ai-delegate list")
     meta = runs.load(folder)
     data = asdict(meta)
+    cfg = config.load()
+    catalog = _catalog(meta.agent, cfg, state=True)
+    data["model_label"] = next((row["label"] for row in catalog["models"] if row["id"] == meta.model), meta.model)
     data["history"] = [{k: v for k, v in entry.items() if k != "usage"} for entry in meta.history]
     last = folder / "last.md"
     diffstat = meta.diffstat
@@ -92,6 +95,8 @@ def _is_allowed_config_key(k: str) -> bool:
     if k.startswith("agents."):
         parts = k.split(".")
         if len(parts) == 3 and parts[2] in {"enabled", "display", "color", "model", "effort", "daily_token_budget"}:
+            return True
+        if len(parts) == 5 and parts[2] == "task_models" and parts[3] in models.CATEGORIES and parts[4] in {"model", "effort"}:
             return True
     return False
 
@@ -123,9 +128,14 @@ def _validate_change_value(k: str, v: Any, cfg: dict[str, Any]) -> str | None:
                 return f"No se puede asignar '{v}' a '{kind}' porque no tiene permiso de edición"
     elif k.startswith("agents."):
         parts = k.split(".")
-        if len(parts) != 3:
+        if len(parts) == 5 and parts[2] == "task_models" and parts[3] in models.CATEGORIES:
+            agent_name, field = parts[1], parts[4]
+        elif len(parts) == 3:
+            agent_name, field = parts[1], parts[2]
+        else:
             return f"Clave de agente inválida: {k}"
-        agent_name, field = parts[1], parts[2]
+        if agent_name not in agents:
+            return f"Agente desconocido: {agent_name}"
         if field == "enabled":
             if not isinstance(v, bool):
                 return f"agents.{agent_name}.enabled debe ser booleano"
@@ -190,16 +200,20 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/state":
                 reconcile.background()
                 cfg = config.load()
-                state = build_state(runs.recent(1_000_000), _claude_status(), stats.read_rows(), datetime.now(),
+                state_metas = runs.recent(1_000_000)
+                now = datetime.now()
+                state = build_state(state_metas, _claude_status(), stats.read_rows(), now,
                                     max_fix_rounds=cfg["limits"]["max_fix_rounds"], cfg=cfg)
                 for agent in state["agents"]:
                     name = agent["name"]
-                    model = cfg["agents"].get(name, {}).get("model", "")
+                    live = max((meta for meta in state_metas if meta.agent == name and ui_alive(meta, now)),
+                               key=lambda meta: meta.updated_at, default=None)
+                    model = live.model if live else cfg["agents"].get(name, {}).get("model", "")
                     catalog = _catalog(name, cfg, state=True)
                     default = catalog.get("default", {})
                     agent["model_label"] = (next((row["label"] for row in catalog["models"] if row["id"] == model), model)
                                             if model else default.get("label") or "predeterminado")
-                    agent["effort"] = cfg["agents"].get(name, {}).get("effort", "") or default.get("effort", "")
+                    agent["effort"] = (live.effort if live else cfg["agents"].get(name, {}).get("effort", "")) or default.get("effort", "")
                 self._json(state)
             elif path == "/api/models":
                 cfg = config.load()

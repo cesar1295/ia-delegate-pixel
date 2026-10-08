@@ -21,6 +21,10 @@
 # effort = ""            # vacío = el predeterminado del CLI
 # home = ""              # perfil aislado opcional (otra cuenta)
 
+# [agents.codex.task_models.imagenes]   # modelo para --kind image
+# model = "gpt-6-sol"
+# effort = "high"
+
 [agents.agy]
 # model = ""
 # effort = ""

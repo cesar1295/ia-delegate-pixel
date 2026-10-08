@@ -619,6 +619,21 @@ aside {
 .setting-field {
   margin-bottom:12px;
 }
+.task-model-row {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  align-items:start;
+  margin-bottom:12px;
+}
+.task-model-kinds {
+  color:var(--muted);
+  font:11px var(--body);
+  margin-top:4px;
+}
+@media(max-width:639px) {
+  .task-model-row { grid-template-columns:1fr; }
+}
 .setting-field label {
   display:block;
   margin-bottom:8px;
