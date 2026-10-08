@@ -1,10 +1,12 @@
 """Actualización silenciosa y mínima del estado de Claude."""
 
 import json
+import os
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from . import config
 from .ui_state import age
@@ -69,6 +71,29 @@ def main(argv: list[str]) -> int:
     return 0
 
 
+def _calibrate_later(windows: list[dict[str, Any]], now: datetime) -> None:
+    """Calibra en un proceso aparte: leer las transcripciones tarda ~1 s en frío y la statusline no debe esperar."""
+    from . import quota
+    if os.environ.get("AI_DELEGATE_INLINE_CALIBRATION") or not hasattr(os, "fork"):
+        quota.calibrate(windows, now)
+        return
+    try:
+        pid = os.fork()
+    except OSError:
+        return
+    if pid:
+        return
+    try:
+        # Suelta la tubería de la statusline para que Claude Code no espere al hijo.
+        os.setsid()
+        devnull = os.open(os.devnull, os.O_RDWR)
+        for fd in (0, 1, 2):
+            os.dup2(devnull, fd)
+        quota.calibrate(windows, now, budget_s=10)
+    finally:
+        os._exit(0)
+
+
 def statusline_main(argv: list[str] | None = None) -> int:
     """Procesa rate_limits de Claude Code para la statusline y guarda claude-quota.json."""
     temporary: Path | None = None
@@ -120,8 +145,7 @@ def statusline_main(argv: list[str] | None = None) -> int:
                             json.dump(data, fh, ensure_ascii=False)
                         temporary.replace(root / "claude-quota.json")
                         temporary = None
-                        from . import quota
-                        quota.calibrate(windows, now)
+                        _calibrate_later(windows, now)
     except Exception:
         output_parts = ["ai-delegate"]
     finally:

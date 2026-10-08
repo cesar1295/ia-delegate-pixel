@@ -60,6 +60,7 @@ def isolated_home(tmp_path_factory, monkeypatch):
         target.mkdir(parents=True, exist_ok=True)
         monkeypatch.setenv(var, str(target))
     monkeypatch.setenv("AI_DELEGATE_HOME", str(fake / ".local/share/ai-delegate"))
+    monkeypatch.setenv("AI_DELEGATE_INLINE_CALIBRATION", "1")  # sin fork dentro de pytest
     monkeypatch.setenv("AI_DELEGATE_CONFIG", str(fake / ".config/ai-delegate/config.toml"))
     # HOME no basta si el proceso padre exportó una ruta de perfil explícita.
     for var, sub in (("CODEX_HOME", ".codex"), ("CLAUDE_CONFIG_DIR", ".claude")):

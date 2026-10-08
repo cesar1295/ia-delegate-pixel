@@ -195,14 +195,14 @@ def _calibration_tokens(now: datetime, deadline: float) -> int | None:
     return result[0] if result else None
 
 
-def calibrate(windows: list[dict], now: datetime) -> None:
+def calibrate(windows: list[dict], now: datetime, budget_s: float = 0.3) -> None:
     """Best effort, bounded transcript scan using usage's shared file cache."""
     temporary = None
     try:
         used = next((w["used_pct"] for w in windows if w.get("label") == "5 h"), 0)
         if not math.isfinite(used) or used < 5:
             return
-        deadline = time.monotonic() + 0.3
+        deadline = time.monotonic() + budget_s
         tokens = _calibration_tokens(now, deadline)
         if tokens is None or tokens <= 0 or time.monotonic() >= deadline:
             return
